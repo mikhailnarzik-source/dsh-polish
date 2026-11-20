@@ -266,6 +266,13 @@ select option:checked {
           state !== null ? h('span', { style: { fontSize: 12, opacity: 0.7 } }, bad.length === 0 ? 'всё в порядке' : 'требует внимания: ' + bad.length) : null,
         ),
         note !== '' ? h('span', { style: { fontSize: 11.5, opacity: 0.75 } }, note) : null,
+        state !== null && checks.length > 0
+          ? (() => {
+              const steps = ['sync', 'backup', 'port', 'token', 'versions']
+              const done = steps.filter((id) => checks.some((item) => item.id === id && item.ok === true)).length
+              return h('span', { style: { fontSize: 11.5, fontWeight: 600 } }, `Быстрый старт: ${done} из ${steps.length}`)
+            })()
+          : null,
         state === null
           ? h('span', { style: { fontSize: 11.5, opacity: 0.6 } }, 'Проверяет git, доступ к репозиторию, резерв, токен, Chrome, порт отладки, MCP и версии.')
           : h(

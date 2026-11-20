@@ -258,6 +258,16 @@ async function collectHealth(ctx) {
     fix: 'browser',
   })
 
+  // Файл секретов браузера: без него агент не сможет входить на сайты.
+  const secretsExists = existsSync(join(dshHome(), 'browser-secrets.env'))
+  checks.push({
+    id: 'secrets',
+    title: 'Секреты браузера',
+    ok: secretsExists,
+    detail: secretsExists ? 'файл на месте' : 'нет файла browser-secrets.env',
+    fix: 'secrets',
+  })
+
   const mcp = await mcpConfigured()
   checks.push({
     id: 'mcp',
