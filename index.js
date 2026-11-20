@@ -10,7 +10,41 @@ import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { connect } from 'node:net'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+
+
+/** Файл с последними замеченными версиями плагинов. */
+function versionsFile() {
+  return join(dshHome(), 'dsh-polish', 'versions.json')
+}
+
+/** Сравнить версии с прошлым прогоном и записать изменения в журнал. */
+async function noteVersionChanges(rows) {
+  let previous = {}
+  try {
+    previous = JSON.parse(await readFile(versionsFile(), 'utf8'))
+  } catch {
+    previous = {}
+  }
+  const next = {}
+  for (const row of rows) {
+    if (typeof row.installed !== 'string') continue
+    next[row.name] = row.installed
+    const before = previous[row.name]
+    if (typeof before === 'string' && before !== row.installed) {
+      await appendLog({ kind: 'update', ok: true, text: `${row.name}: ${before} → ${row.installed}` })
+    }
+    if (row.behind === true && (before === undefined || before === row.installed)) {
+      await appendLog({ kind: 'update-available', ok: true, text: `${row.name}: ${row.installed} → ${row.latest}` })
+    }
+  }
+  try {
+    await mkdir(dirname(versionsFile()), { recursive: true })
+    await writeFile(versionsFile(), JSON.stringify(next, null, 2) + '\n', 'utf8')
+  } catch {
+    // снимок версий необязателен
+  }
+}
 
 export const name = 'dsh-polish'
 export const inject = ['connection']
@@ -30,7 +64,7 @@ async function appendLog(entry) {
   try {
     const file = logFile()
     await mkdir(join(dshHome(), 'dsh-polish'), { recursive: true })
-    await appendFile(file, JSON.stringify({ at: new Date().toISOString(), ...entry }) + '\\n', 'utf8')
+    await appendFile(file, JSON.stringify({ at: new Date().toISOString(), ...entry }) + '\n', 'utf8')
   } catch {
     // журнал необязателен
   }
@@ -436,6 +470,7 @@ export function apply(ctx) {
               behind: compareVersions(remote.version, installed) > 0,
             })
           }
+          await noteVersionChanges(rows)
           return json({ ok: true, rows })
         },
       })
