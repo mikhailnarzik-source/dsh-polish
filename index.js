@@ -58,7 +58,8 @@ async function installedVersion(name) {
 /** Версия из GitHub (main). */
 async function remoteVersion(repo) {
   try {
-    const response = await fetch(`https://raw.githubusercontent.com/${repo}/main/package.json`, {
+    // Кэш CDN держит файл несколько минут: подмешиваем метку времени.
+    const response = await fetch(`https://raw.githubusercontent.com/${repo}/main/package.json?t=${Date.now()}`, {
       signal: AbortSignal.timeout(15_000),
       headers: { 'user-agent': 'dsh-polish' },
     })
