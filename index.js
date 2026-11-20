@@ -36,21 +36,38 @@ async function appendLog(entry) {
   }
 }
 
-/** Последние записи журнала, новые сверху. */
-async function readLog(limit = 30) {
+/** Прочитать один файл журнала. */
+async function readLogFile(file) {
   try {
-    const text = await readFile(logFile(), 'utf8')
-    const rows = text.split('\\n').filter((line) => line.trim() !== '').map((line) => {
+    const text = await readFile(file, 'utf8')
+    return text.split('\n').filter((line) => line.trim() !== '').map((line) => {
       try {
         return JSON.parse(line)
       } catch {
         return undefined
       }
     }).filter(Boolean)
-    return rows.slice(-limit).reverse()
   } catch {
     return []
   }
+}
+
+/** Последние записи журнала: все плагины вместе, новые сверху. */
+async function readLog(limit = 40) {
+  const rows = []
+  try {
+    const { readdirSync } = await import('node:fs')
+    for (const entry of readdirSync(dshHome(), { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue
+      for (const line of await readLogFile(join(dshHome(), entry.name, 'log.jsonl'))) {
+        rows.push({ ...line, plugin: line.plugin ?? entry.name })
+      }
+    }
+  } catch {
+    // каталог профиля недоступен — вернём пустой список
+  }
+  rows.sort((a, b) => String(b.at ?? '').localeCompare(String(a.at ?? '')))
+  return rows.slice(0, limit)
 }
 
 /** Наши плагины и их репозитории на GitHub. */

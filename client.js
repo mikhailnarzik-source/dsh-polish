@@ -276,6 +276,7 @@ select option:checked {
                     'div',
                     { key: String(index), style: { display: 'flex', gap: 8, fontSize: 11.5, opacity: row.ok === false ? 1 : 0.75 } },
                     h('span', { style: { minWidth: 120, opacity: 0.7 } }, String(row.at ?? '').slice(11, 16)),
+                    h('span', { style: { minWidth: 70, opacity: 0.8 } }, row.plugin ?? ''),
                     h('span', { style: { minWidth: 60 } }, row.kind ?? ''),
                     h('span', null, String(row.text ?? '')),
                   ),
