@@ -23,6 +23,7 @@ const REPOS = [
   { name: 'dsh-compact', repo: 'mikhailnarzik-source/dsh-compact' },
   { name: 'dsh-expenses', repo: 'mikhailnarzik-source/dsh-expenses' },
   { name: 'dsh-github-safe', repo: 'mikhailnarzik-source/dsh-github-safe' },
+  { name: 'dsh-notify', repo: 'mikhailnarzik-source/dsh-notify' },
   { name: 'dsh-plugin-whale-pet', repo: 'mikhailnarzik-source/dsh-whale-pet', as: 'dsh-plugin-whale-pet-ru' },
 ]
 
