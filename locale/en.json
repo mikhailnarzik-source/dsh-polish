@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Interface polish",
+    "description": "One appearance layer for every plugin: button highlight on hover, a visible keyboard focus ring and readable native fields in both themes.",
+    "detail": "docs/DETAIL.md"
+  }
+}
