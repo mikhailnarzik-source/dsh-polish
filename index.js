@@ -8,7 +8,7 @@
  */
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { connect } from 'node:net'
 import { join } from 'node:path'
 
@@ -18,6 +18,40 @@ export const inject = ['connection']
 const UPDATES_PATH = '/api/dsh-polish/updates'
 const HEALTH_PATH = '/api/dsh-polish/health'
 const FIX_PATH = '/api/dsh-polish/fix'
+const LOG_PATH = '/api/dsh-polish/log'
+
+/** Файл журнала: короткая история того, что проверяли и исправляли. */
+function logFile() {
+  return join(dshHome(), 'dsh-polish', 'log.jsonl')
+}
+
+/** Записать событие в журнал; сбои журнала не должны ломать работу. */
+async function appendLog(entry) {
+  try {
+    const file = logFile()
+    await mkdir(join(dshHome(), 'dsh-polish'), { recursive: true })
+    await appendFile(file, JSON.stringify({ at: new Date().toISOString(), ...entry }) + '\\n', 'utf8')
+  } catch {
+    // журнал необязателен
+  }
+}
+
+/** Последние записи журнала, новые сверху. */
+async function readLog(limit = 30) {
+  try {
+    const text = await readFile(logFile(), 'utf8')
+    const rows = text.split('\\n').filter((line) => line.trim() !== '').map((line) => {
+      try {
+        return JSON.parse(line)
+      } catch {
+        return undefined
+      }
+    }).filter(Boolean)
+    return rows.slice(-limit).reverse()
+  } catch {
+    return []
+  }
+}
 
 /** Наши плагины и их репозитории на GitHub. */
 const REPOS = [
@@ -374,11 +408,12 @@ export function apply(ctx) {
             if (installed === undefined) continue
             const remote = await remoteVersion(item.repo)
             if (remote.version === undefined) {
-              rows.push({ name: item.name, installed, error: remote.error ?? 'версия не прочитана' })
+              rows.push({ name: item.name, repo: item.repo, installed, error: remote.error ?? 'версия не прочитана' })
               continue
             }
             rows.push({
               name: item.name,
+              repo: item.repo,
               installed,
               latest: remote.version,
               behind: compareVersions(remote.version, installed) > 0,
@@ -394,11 +429,21 @@ export function apply(ctx) {
         requestBody: 'buffered',
         fetch: async () => {
           try {
-            return json(await collectHealth(ctx))
+            const health = await collectHealth(ctx)
+            const bad = health.checks.filter((check) => check.ok !== true)
+            await appendLog({ kind: 'health', ok: bad.length === 0, text: bad.length === 0 ? 'все проверки пройдены' : 'требуют внимания: ' + bad.map((check) => check.title).join(', ') })
+            return json(health)
           } catch (error) {
             return json({ ok: false, message: error instanceof Error ? error.message : String(error) })
           }
         },
+      })
+
+      ctx.connection.fetch.register({
+        path: LOG_PATH,
+        methods: ['POST'],
+        requestBody: 'buffered',
+        fetch: async () => json({ ok: true, rows: await readLog() }),
       })
 
       ctx.connection.fetch.register({
@@ -413,8 +458,16 @@ export function apply(ctx) {
             body = {}
           }
           const action = typeof body?.action === 'string' ? body.action : ''
-          if (action === 'mcp') return json(await fixMcp())
-          if (action === 'secrets') return json(await fixSecrets())
+          if (action === 'mcp') {
+            const result = await fixMcp()
+            await appendLog({ kind: 'fix', ok: result.ok === true, text: 'MCP: ' + result.message })
+            return json(result)
+          }
+          if (action === 'secrets') {
+            const result = await fixSecrets()
+            await appendLog({ kind: 'fix', ok: result.ok === true, text: 'секреты: ' + result.message })
+            return json(result)
+          }
           return json({ ok: false, message: 'неизвестное действие' })
         },
       })

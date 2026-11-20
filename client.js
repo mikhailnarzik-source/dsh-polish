@@ -19,6 +19,7 @@ window.__ModuleLoader__.load({
     const UPDATES_PATH = '/api/dsh-polish/updates'
     const HEALTH_PATH = '/api/dsh-polish/health'
     const FIX_PATH = '/api/dsh-polish/fix'
+    const LOG_PATH = '/api/dsh-polish/log'
 
     const en = {
       title: 'Interface polish',
@@ -195,6 +196,24 @@ select option:checked {
             busy ? 'Проверяю…' : 'Проверить',
           ),
           rows !== null ? h('span', { style: { fontSize: 12, opacity: 0.7 } }, behind.length === 0 ? 'все актуальны' : 'доступно: ' + behind.length) : null,
+          behind.length > 0
+            ? h(
+                'button',
+                {
+                  style: { padding: '4px 10px', borderRadius: 8, border: '1px solid rgba(128,128,128,0.35)', background: 'rgba(128,128,128,0.12)', color: 'inherit', font: 'inherit', fontSize: 12, cursor: 'pointer' },
+                  onClick: () => {
+                    const commands = behind.map((row) => 'dsh plugin --profile desktop add github:' + (row.repo ?? row.name)).join('\n');
+                    try {
+                      void navigator.clipboard.writeText(commands);
+                      setNote('команды скопированы: ' + behind.length);
+                    } catch {
+                      setNote(commands);
+                    }
+                  },
+                },
+                'Скопировать команды',
+              )
+            : null,
         ),
         rows === null
           ? h('span', { style: { fontSize: 11.5, opacity: 0.6 } }, 'Нажмите «Проверить», чтобы сравнить установленные версии с GitHub.')
@@ -217,6 +236,54 @@ select option:checked {
 
 
     /** Экран «Состояние»: проверки окружения и починка того, что исправимо. */
+
+    /** Журнал: что проверяли и исправляли в последнее время. */
+    function JournalBlock() {
+      const [rows, setRows] = React.useState(null);
+
+      const load = async () => {
+        try {
+          const response = await fetch(LOG_PATH, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+          const data = await response.json();
+          setRows(Array.isArray(data?.rows) ? data.rows : []);
+        } catch {
+          setRows([]);
+        }
+      };
+
+      return h(
+        'div',
+        { style: { display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 10, borderTop: '1px solid rgba(128,128,128,0.18)' } },
+        h(
+          'div',
+          { style: { display: 'flex', alignItems: 'center', gap: 10 } },
+          h('span', { style: { fontSize: 12.5, fontWeight: 600 } }, 'Журнал'),
+          h(
+            'button',
+            { style: { padding: '4px 10px', borderRadius: 8, border: '1px solid rgba(128,128,128,0.35)', background: 'rgba(128,128,128,0.12)', color: 'inherit', font: 'inherit', fontSize: 12, cursor: 'pointer' }, onClick: () => void load() },
+            'Показать',
+          ),
+        ),
+        rows === null
+          ? h('span', { style: { fontSize: 11.5, opacity: 0.6 } }, 'Последние проверки и исправления.')
+          : rows.length === 0
+            ? h('span', { style: { fontSize: 11.5, opacity: 0.6 } }, 'Записей пока нет.')
+            : h(
+                'div',
+                { style: { display: 'flex', flexDirection: 'column', gap: 3 } },
+                ...rows.slice(0, 8).map((row, index) =>
+                  h(
+                    'div',
+                    { key: String(index), style: { display: 'flex', gap: 8, fontSize: 11.5, opacity: row.ok === false ? 1 : 0.75 } },
+                    h('span', { style: { minWidth: 120, opacity: 0.7 } }, String(row.at ?? '').slice(11, 16)),
+                    h('span', { style: { minWidth: 60 } }, row.kind ?? ''),
+                    h('span', null, String(row.text ?? '')),
+                  ),
+                ),
+              ),
+      );
+    }
+
     function HealthBlock() {
       const [state, setState] = React.useState(null);
       const [busy, setBusy] = React.useState(false);
@@ -319,6 +386,7 @@ select option:checked {
         h('span', { style: { fontSize: 13.5, fontWeight: 600 } }, t('heading')),
         h('span', { style: { fontSize: 12, opacity: 0.75, lineHeight: 1.5 } }, t('hint')),
         h(HealthBlock, null),
+        h(JournalBlock, null),
         h(UpdatesBlock, null),
         h(
           'label',
