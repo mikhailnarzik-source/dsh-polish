@@ -17,6 +17,8 @@ window.__ModuleLoader__.load({
     const NS = 'dshPolish'
     const STORAGE_KEY = 'dsh-polish:enabled'
     const UPDATES_PATH = '/api/dsh-polish/updates'
+    const HEALTH_PATH = '/api/dsh-polish/health'
+    const FIX_PATH = '/api/dsh-polish/fix'
 
     const en = {
       title: 'Interface polish',
@@ -213,6 +215,82 @@ select option:checked {
       );
     }
 
+
+    /** Экран «Состояние»: проверки окружения и починка того, что исправимо. */
+    function HealthBlock() {
+      const [state, setState] = React.useState(null);
+      const [busy, setBusy] = React.useState(false);
+      const [note, setNote] = React.useState('');
+
+      const check = async () => {
+        setBusy(true);
+        setNote('');
+        try {
+          const response = await fetch(HEALTH_PATH, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+          const data = await response.json();
+          setState(data?.ok === true ? data : { checks: [], message: data?.message ?? 'не удалось проверить' });
+        } catch (error) {
+          setState({ checks: [], message: String(error?.message ?? error) });
+        } finally {
+          setBusy(false);
+        }
+      };
+
+      const fix = async (action) => {
+        setNote('исправляю…');
+        try {
+          const response = await fetch(FIX_PATH, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action }) });
+          const data = await response.json();
+          setNote(String(data?.message ?? 'готово'));
+          await check();
+        } catch (error) {
+          setNote('не получилось: ' + String(error?.message ?? error));
+        }
+      };
+
+      const checks = state?.checks ?? [];
+      const bad = checks.filter((item) => item.ok !== true);
+
+      return h(
+        'div',
+        { style: { display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 10, borderTop: '1px solid rgba(128,128,128,0.18)' } },
+        h(
+          'div',
+          { style: { display: 'flex', alignItems: 'center', gap: 10 } },
+          h('span', { style: { fontSize: 12.5, fontWeight: 600 } }, 'Состояние'),
+          h(
+            'button',
+            { style: { padding: '4px 10px', borderRadius: 8, border: '1px solid rgba(128,128,128,0.35)', background: 'rgba(128,128,128,0.12)', color: 'inherit', font: 'inherit', fontSize: 12, cursor: 'pointer' }, onClick: () => void check() },
+            busy ? 'Проверяю…' : 'Проверить',
+          ),
+          state !== null ? h('span', { style: { fontSize: 12, opacity: 0.7 } }, bad.length === 0 ? 'всё в порядке' : 'требует внимания: ' + bad.length) : null,
+        ),
+        note !== '' ? h('span', { style: { fontSize: 11.5, opacity: 0.75 } }, note) : null,
+        state === null
+          ? h('span', { style: { fontSize: 11.5, opacity: 0.6 } }, 'Проверяет git, доступ к репозиторию, резерв, токен, Chrome, порт отладки, MCP и версии.')
+          : h(
+              'div',
+              { style: { display: 'flex', flexDirection: 'column', gap: 4 } },
+              ...checks.map((item) =>
+                h(
+                  'div',
+                  { key: item.id, style: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 11.5 } },
+                  h('span', { style: { width: 14, color: item.ok === true ? '#2f9e44' : '#d1242f' } }, item.ok === true ? '✓' : '✗'),
+                  h('span', { style: { minWidth: 170 } }, item.title),
+                  h('span', { style: { opacity: 0.7, flex: 1 } }, item.detail ?? ''),
+                  item.ok !== true && (item.fix === 'mcp' || item.fix === 'secrets')
+                    ? h(
+                        'button',
+                        { style: { padding: '2px 8px', borderRadius: 6, border: '1px solid rgba(128,128,128,0.35)', background: 'rgba(128,128,128,0.12)', color: 'inherit', font: 'inherit', fontSize: 11, cursor: 'pointer' }, onClick: () => void fix(item.fix) },
+                        'Исправить',
+                      )
+                    : null,
+                ),
+              ),
+            ),
+      );
+    }
+
     function PolishCard() {
       const [enabled, setEnabled] = React.useState(isEnabled())
       const t = (key) => translate(key)
@@ -233,6 +311,7 @@ select option:checked {
         { style: { display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13 } },
         h('span', { style: { fontSize: 13.5, fontWeight: 600 } }, t('heading')),
         h('span', { style: { fontSize: 12, opacity: 0.75, lineHeight: 1.5 } }, t('hint')),
+        h(HealthBlock, null),
         h(UpdatesBlock, null),
         h(
           'label',
