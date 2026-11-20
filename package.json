@@ -1,20 +1,39 @@
 {
   "name": "dsh-polish",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Единый слой оформления для всех плагинов DSH: подсветка наведения на кнопках, заметный фокус с клавиатуры и правильные цвета нативных полей в любой теме",
   "type": "module",
   "license": "MIT",
-  "keywords": ["dsh", "dsh-plugin", "deepseek-harness", "style", "accessibility"],
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "style",
+    "accessibility"
+  ],
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
     "./locale/*.json": "./locale/*.json",
     "./icon": "./icon.svg"
   },
-  "files": ["index.js", "client.js", "cordis.patch.yml", "locale", "docs", "icon.svg", "README.md", "LICENSE"],
-  "engines": { "node": ">=22.15" },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale",
+    "docs",
+    "icon.svg",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22.15"
+  },
   "dsh": {
-    "bundle": { "patch": "./cordis.patch.yml" },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
     "client": {
       "platform": "web",
       "immediately": true,
