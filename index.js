@@ -343,13 +343,26 @@ async function collectHealth(ctx) {
     fix: 'browser',
   })
 
-  // Файл секретов браузера: без него агент не сможет входить на сайты.
-  const secretsExists = existsSync(join(dshHome(), 'browser-secrets.env'))
+  // Файл секретов браузера: он существует и в нём есть хотя бы одна строка.
+  const secretsPath = join(dshHome(), 'browser-secrets.env')
+  let secretsLines = -1
+  try {
+    secretsLines = (await readFile(secretsPath, 'utf8'))
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line !== '' && !line.startsWith('#')).length
+  } catch {
+    secretsLines = -1
+  }
   checks.push({
     id: 'secrets',
     title: 'Секреты браузера',
-    ok: secretsExists,
-    detail: secretsExists ? 'файл на месте' : 'нет файла browser-secrets.env',
+    ok: secretsLines > 0,
+    detail: secretsLines === -1
+      ? 'нет файла browser-secrets.env'
+      : secretsLines === 0
+        ? 'файл пуст — впиши логины сайтов'
+        : `заполнен: ${secretsLines} строк`,
     fix: 'secrets',
   })
 

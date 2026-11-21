@@ -235,6 +235,18 @@ select option:checked {
     }
 
 
+    /** Подсказки: что делать, если проверка не прошла. */
+    const HINTS = {
+      token: 'Настройки → Плагины → GitHub → поле Personal access token.',
+      sync: 'Проверь вход в GitHub: git ls-remote <адрес репозитория>.',
+      chrome: 'Установи Google Chrome — без него браузер агента не поднимается.',
+      port: 'Открой «Старт» справа и нажми «Запустить браузер».',
+      secrets: 'Впиши логины в ~/.dsh/browser-secrets.env по образцу из архива подготовки.',
+      mcp: 'Нажми «Исправить» — сервер допишется в профиль.',
+      versions: 'Нажми «Скопировать команды» в блоке обновлений и выполни их в терминале.',
+      backup: 'Проверь свободное место на Яндекс.Диске и запусти синхронизацию вручную.',
+    }
+
     /** Экран «Состояние»: проверки окружения и починка того, что исправимо. */
 
     /** Журнал: что проверяли и исправляли в последнее время. */
@@ -353,6 +365,9 @@ select option:checked {
                   h('span', { style: { width: 14, color: item.ok === true ? '#2f9e44' : '#d1242f' } }, item.ok === true ? '✓' : '✗'),
                   h('span', { style: { minWidth: 170 } }, item.title),
                   h('span', { style: { opacity: 0.7, flex: 1 } }, item.detail ?? ''),
+                  item.ok !== true && HINTS[item.fix] !== undefined
+                    ? h('span', { style: { fontSize: 10.5, opacity: 0.55, maxWidth: 260 } }, HINTS[item.fix])
+                    : null,
                   item.ok !== true && (item.fix === 'mcp' || item.fix === 'secrets')
                     ? h(
                         'button',
