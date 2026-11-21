@@ -20,6 +20,7 @@ window.__ModuleLoader__.load({
     const HEALTH_PATH = '/api/dsh-polish/health'
     const FIX_PATH = '/api/dsh-polish/fix'
     const LOG_PATH = '/api/dsh-polish/log'
+    const UPDATE_ALL_PATH = '/api/dsh-polish/update-all'
 
     const en = {
       title: 'Interface polish',
@@ -258,6 +259,26 @@ select option:checked {
                   },
                 },
                 'Скопировать команды',
+              )
+            : null,
+          behind.length > 0
+            ? h(
+                'button',
+                {
+                  style: { padding: '4px 10px', borderRadius: 8, border: '1px solid rgba(106,139,208,0.45)', background: 'rgba(106,139,208,0.16)', color: 'inherit', font: 'inherit', fontSize: 12, cursor: 'pointer' },
+                  onClick: async () => {
+                    setNote('обновляю… это может занять минуту')
+                    try {
+                      const response = await fetch(UPDATE_ALL_PATH, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ apply: true }) })
+                      const data = await response.json()
+                      setNote(String(data?.message ?? 'готово'))
+                      await load()
+                    } catch (error) {
+                      setNote('не удалось: ' + String(error?.message ?? error))
+                    }
+                  },
+                },
+                'Обновить всё',
               )
             : null,
         ),

@@ -46,6 +46,79 @@ async function noteVersionChanges(rows) {
   }
 }
 
+
+/** Путь к CLI DeepSeek Harness. */
+function cliPath() {
+  const candidates = [
+    join(process.env.LOCALAPPDATA ?? '', 'Programs/DeepSeek Harness/resources/runtime/cli/bin/dsh.cmd'),
+    join(process.env.PROGRAMFILES ?? '', 'DeepSeek Harness/resources/runtime/cli/bin/dsh.cmd'),
+  ]
+  return candidates.find((candidate) => candidate !== '' && existsSync(candidate))
+}
+
+/** Обновить наши плагины через CLI. Возвращает по каждому результат. */
+async function updateAll(apply) {
+  const rows = []
+  for (const item of REPOS) {
+    const installed = await installedVersion(item.name)
+    if (installed === undefined) continue
+    const remote = await remoteVersion(item.repo)
+    if (remote.version === undefined) continue
+    if (compareVersions(remote.version, installed) <= 0) continue
+    rows.push({ name: item.name, repo: item.repo, from: installed, to: remote.version })
+  }
+
+  if (rows.length === 0) return { ok: true, updated: 0, rows, message: 'все плагины актуальны' }
+
+  const commands = rows.map((row) => 'dsh plugin --profile desktop add github:' + row.repo)
+  if (apply !== true) return { ok: true, applied: false, rows, commands, message: 'готово к обновлению: ' + rows.length }
+
+  const cli = cliPath()
+  if (cli === undefined) {
+    return { ok: false, rows, commands, message: 'CLI DeepSeek Harness не найден — выполни команды вручную' }
+  }
+
+  const results = []
+  for (const row of rows) {
+    const run = await execute(cli, ['plugin', '--profile', 'desktop', 'add', 'github:' + row.repo], 180_000)
+    results.push({ name: row.name, to: row.to, ok: run.ok, output: run.output.slice(-300) })
+  }
+  const failed = results.filter((item) => item.ok !== true)
+  await appendLog({
+    kind: 'update-all',
+    ok: failed.length === 0,
+    text: failed.length === 0
+      ? 'обновлено плагинов: ' + results.length
+      : 'не удалось обновить: ' + failed.map((item) => item.name).join(', '),
+  })
+  return {
+    ok: failed.length === 0,
+    applied: true,
+    results,
+    message: failed.length === 0
+      ? 'обновлено: ' + results.length + ' — перезапусти DSH'
+      : 'часть плагинов не обновилась: ' + failed.map((item) => item.name).join(', '),
+  }
+}
+
+/** Запустить команду и вернуть вывод.
+ *
+ * .cmd на Windows нельзя запускать напрямую с путём, где есть пробелы:
+ * вызываем через cmd.exe с кавычками вокруг пути.
+ */
+function execute(command, args, timeout) {
+  return new Promise((resolve) => {
+    const isScript = /\.(cmd|bat)$/i.test(command)
+    const program = isScript ? (process.env.ComSpec ?? 'cmd.exe') : command
+    // cmd.exe получает путь и аргументы отдельными элементами — тогда
+    // пробелы в пути не ломают разбор.
+    const argv = isScript ? ['/c', command, ...args] : args
+    execFile(program, argv, { timeout, windowsHide: true }, (error, stdout, stderr) => {
+      resolve({ ok: error === null, output: String(stdout ?? '') + String(stderr ?? '') })
+    })
+  })
+}
+
 export const name = 'dsh-polish'
 export const inject = ['connection']
 
@@ -53,6 +126,7 @@ const UPDATES_PATH = '/api/dsh-polish/updates'
 const HEALTH_PATH = '/api/dsh-polish/health'
 const FIX_PATH = '/api/dsh-polish/fix'
 const LOG_PATH = '/api/dsh-polish/log'
+const UPDATE_ALL_PATH = '/api/dsh-polish/update-all'
 
 /** Файл журнала: короткая история того, что проверяли и исправляли. */
 function logFile() {
@@ -509,6 +583,21 @@ export function apply(ctx) {
         methods: ['POST'],
         requestBody: 'buffered',
         fetch: async () => json({ ok: true, rows: await readLog() }),
+      })
+
+      ctx.connection.fetch.register({
+        path: UPDATE_ALL_PATH,
+        methods: ['POST'],
+        requestBody: 'buffered',
+        fetch: async (request) => {
+          let body = {}
+          try {
+            body = await request.json()
+          } catch {
+            body = {}
+          }
+          return json(await updateAll(body?.apply === true))
+        },
       })
 
       ctx.connection.fetch.register({
