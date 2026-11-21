@@ -561,6 +561,20 @@ function CollapsedItem({ title, summary, badge, children }) {
 
     let translate = (key) => key
 
+    /** Содержимое карточки на странице своего плагина. */
+    function DetailCard_dshpolish(props) {
+      const subject = props?.subject
+      const packageName =
+        subject?.kind === 'bundle' && typeof subject?.pkg?.name === 'string'
+          ? subject.pkg.name
+          : typeof subject?.id === 'string'
+            ? subject.id
+            : ''
+      if (packageName !== 'dsh-polish') return null
+      const content = () => h(CollapsedItem, { title: 'Оформление интерфейса', summary: 'Наведение, фокус, тема; состояние и обновления', badge: 'наше' }, h(PolishCard))
+      return typeof content === 'function' ? content(props) : content
+    }
+
     function apply(ctx) {
       const locale = ctx.locale
       locale.register(NS, { en, ru })
@@ -570,18 +584,21 @@ function CollapsedItem({ title, summary, badge, children }) {
       applyStyles(ctx)
 
       try {
-        ctx.slots.inject('plugins.item', () =>
+              try {
+        ctx.slots.inject('plugins.detail.section', () =>
           ctx.slots.register(
             {
-              name: 'plugins.item',
-              id: 'dsh-polish',
-              order: 56,
-              label: () => translate('title'),
+              name: 'plugins.detail.section',
+              id: 'dsh-polish-detail',
+              order: 45,
               locale: NS,
             },
-            () => h(CollapsedItem, { title: 'Оформление интерфейса', summary: 'Наведение, фокус, тема; состояние и обновления', badge: 'наше' }, h(PolishCard)),
+            DetailCard_dshpolish,
           ),
         )
+      } catch (error) {
+        console.error('[dsh-polish] секция страницы недоступна:', error)
+      }
       } catch (error) {
         console.error('[dsh-polish] карточка недоступна:', error)
       }

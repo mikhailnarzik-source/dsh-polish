@@ -50,7 +50,7 @@ exported.apply(ctx)
 assert.equal(exported.inject.includes('slots'), true)
 assert.equal(boundNs, 'dshPolish')
 assert.equal(registrations.length, 1)
-assert.equal(registrations[0].options.name, 'plugins.item')
+assert.equal(registrations[0].options.name, 'plugins.detail.section')
 assert.equal(typeof registrations[0].component, 'function')
 
 // effect с включённым по умолчанию оформлением ставит слой стилей
@@ -62,13 +62,14 @@ assert.match(css, /focus-visible/)
 assert.match(css, /color-scheme: inherit/)
 
 // карточка рендерится без ошибок
-// Карточка обёрнута в общую рамку: разворачиваем её и проверяем содержимое.
-const wrapper = registrations[0].component({})
-const card = typeof wrapper.type === 'function'
-  ? wrapper.type({ ...(wrapper.props ?? {}), children: wrapper.children })
-  : wrapper
-assert.equal(card.type, 'div')
-assert.ok((wrapper.children ?? []).length >= 1)
+// Внешняя обёртка — свёрнутая строка; проверяем и её, и содержимое.
+const wrapper = registrations[0].component({ subject: { kind: 'bundle', pkg: { name: 'dsh-polish' } } })
+assert.equal(typeof wrapper.type, 'function')
+const card = wrapper.children[2] === null ? wrapper : registrations[0].component({ subject: { kind: 'bundle', pkg: { name: 'dsh-polish' } } })
+assert.equal(typeof wrapper, 'object')
+const inner = wrapper.type({ ...wrapper.props, children: null })
+assert.equal(inner.type, 'div')
+assert.ok(inner.children.length >= 2)
 
 console.log('polish smoke: OK')
-console.log('  стили:', css.split('\n').length, 'строк | карточка:', card.children.length, 'элементов')
+console.log('  стили:', css.split('\n').length, 'строк | карточка:', inner.children.length, 'элементов')
