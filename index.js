@@ -70,7 +70,10 @@ async function updateAll(apply) {
 
   if (rows.length === 0) return { ok: true, updated: 0, rows, message: 'все плагины актуальны' }
 
-  const commands = rows.map((row) => 'dsh plugin --profile desktop add github:' + row.repo)
+  const commands = rows.flatMap((row) => [
+    'dsh plugin --profile desktop remove ' + row.name,
+    'dsh plugin --profile desktop add github:' + row.repo,
+  ])
   if (apply !== true) return { ok: true, applied: false, rows, commands, message: 'готово к обновлению: ' + rows.length }
 
   const cli = cliPath()
@@ -80,6 +83,8 @@ async function updateAll(apply) {
 
   const results = []
   for (const row of rows) {
+    // Установка поверх установленного плагина отклоняется — сначала удаляем.
+    await execute(cli, ['plugin', '--profile', 'desktop', 'remove', row.name], 120_000)
     const run = await execute(cli, ['plugin', '--profile', 'desktop', 'add', 'github:' + row.repo], 180_000)
     results.push({ name: row.name, to: row.to, ok: run.ok, output: run.output.slice(-300) })
   }
