@@ -183,6 +183,30 @@ select option:checked {
       }
     }
 
+    /** Ctrl+R / F5 обновляют страницу: в Electron по умолчанию такого сочетания нет. */
+    function installReloadShortcut(ctx) {
+      try {
+        ctx.effect(() => {
+          if (typeof window.addEventListener !== 'function') return () => {}
+          const handler = (event) => {
+            if (event.altKey === true) return
+            const key = String(event.key ?? '').toLowerCase()
+            const withControl = event.ctrlKey === true || event.metaKey === true
+            const isReload = withControl && key === 'r'
+            const isF5 = event.key === 'F5'
+            if (!isReload && !isF5) return
+            event.preventDefault()
+            event.stopPropagation()
+            window.location.reload()
+          }
+          window.addEventListener('keydown', handler, true)
+          return () => window.removeEventListener('keydown', handler, true)
+        }, 'dsh-polish: reload shortcut')
+      } catch (error) {
+        console.error('[dsh-polish] сочетание обновления недоступно:', error)
+      }
+    }
+
     function applyStyles(ctx) {
       try {
         ctx.effect(() => {
@@ -600,6 +624,7 @@ function CollapsedItem({ title, summary, badge, children }) {
 
       watchTheme()
       applyStyles(ctx)
+      installReloadShortcut(ctx)
 
       try {
               try {
