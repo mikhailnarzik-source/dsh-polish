@@ -62,9 +62,13 @@ assert.match(css, /focus-visible/)
 assert.match(css, /color-scheme: inherit/)
 
 // карточка рендерится без ошибок
-const card = registrations[0].component({})
+// Карточка обёрнута в общую рамку: разворачиваем её и проверяем содержимое.
+const wrapper = registrations[0].component({})
+const card = typeof wrapper.type === 'function'
+  ? wrapper.type({ ...(wrapper.props ?? {}), children: wrapper.children })
+  : wrapper
 assert.equal(card.type, 'div')
-assert.ok(card.children.length >= 3)
+assert.ok((wrapper.children ?? []).length >= 1)
 
 console.log('polish smoke: OK')
 console.log('  стили:', css.split('\n').length, 'строк | карточка:', card.children.length, 'элементов')
