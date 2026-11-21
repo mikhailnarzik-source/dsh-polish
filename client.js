@@ -31,6 +31,7 @@ window.__ModuleLoader__.load({
       off: 'Disabled',
     }
     const ru = {
+      reload: 'Обновить',
       title: 'Оформление интерфейса',
       heading: 'Внешний вид всех плагинов',
       hint: 'Подсвечивает кнопки при наведении, рисует заметную обводку фокуса и держит нативные поля читаемыми в обеих темах. Действует на все плагины, включая сторонние.',
@@ -625,6 +626,40 @@ function CollapsedItem({ title, summary, badge, children }) {
       watchTheme()
       applyStyles(ctx)
       installReloadShortcut(ctx)
+      try {
+        ctx.slots.inject('sidebar.footer.action', () =>
+          ctx.slots.register(
+            { name: 'sidebar.footer.action', id: 'dsh-polish-reload', order: 90, locale: NS },
+            () =>
+              h(
+                'button',
+                {
+                  type: 'button',
+                  title: 'Обновить страницу (Ctrl+R)',
+                  onClick: () => window.location.reload(),
+                  style: {
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    height: 26,
+                    padding: '0 8px',
+                    borderRadius: 6,
+                    border: '1px solid rgba(128,128,128,0.3)',
+                    background: 'transparent',
+                    color: 'inherit',
+                    font: 'inherit',
+                    fontSize: 12,
+                    cursor: 'pointer',
+                  },
+                },
+                h('span', null, '↻'),
+                h('span', null, translate('reload')),
+              ),
+          ),
+        )
+      } catch (error) {
+        console.error('[dsh-polish] кнопка обновления недоступна:', error)
+      }
 
       try {
               try {
