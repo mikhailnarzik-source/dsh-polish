@@ -193,7 +193,18 @@ select option:checked {
       }
       return h(
         'div',
-        { className: 'dsh-our-card', style: box },
+        {
+          style: {
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+            padding: '10px 12px',
+            borderRadius: 10,
+            border: '1px solid rgba(128,128,128,0.28)',
+            background: 'rgba(128,128,128,0.07)',
+            boxSizing: 'border-box',
+          },
+        },
         h(
           'div',
           { style: { display: 'flex', alignItems: 'center', gap: 10 } },
@@ -220,7 +231,22 @@ select option:checked {
             open ? 'Свернуть' : 'Открыть',
           ),
         ),
-        open ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10 } }, children) : null,
+        open
+          ? h(
+              'div',
+              {
+                style: {
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 10,
+                  paddingTop: 10,
+                  marginTop: 2,
+                  borderTop: '1px solid rgba(128,128,128,0.24)',
+                },
+              },
+              children,
+            )
+          : null,
       )
     }
 
