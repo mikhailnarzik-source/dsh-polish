@@ -572,6 +572,31 @@ async function installReloadSupport(tool) {
       if (typeof contents.once === 'function') contents.once('destroyed', () => { contents.__dshReloadHooked = false })
     }
 
+    // Меню приложения: Ctrl+R должен обновлять окно, даже если страница занята.
+    const Menu = electron.Menu ?? electron.default?.Menu
+    const MenuItem = electron.MenuItem ?? electron.default?.MenuItem
+    if (Menu !== undefined && MenuItem !== undefined) {
+      try {
+        const menu = Menu.getApplicationMenu()
+        if (menu !== null && menu !== undefined && menu.__dshReloadHooked !== true) {
+          menu.__dshReloadHooked = true
+          menu.append(new MenuItem({
+            label: 'Обновить страницу',
+            visible: false,
+            accelerator: 'CmdOrCtrl+R',
+            click: () => {
+              const target = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+              try { target?.webContents.reload() } catch { /* окно закрыто */ }
+            },
+          }))
+          Menu.setApplicationMenu(menu)
+          console.log('[dsh-polish] сочетание Ctrl+R назначено через меню приложения')
+        }
+      } catch (error) {
+        console.error('[dsh-polish] меню недоступно:', error)
+      }
+    }
+
     for (const win of windows) attach(win)
     if (app !== undefined && typeof app.on === 'function') {
       listener = (_event, win) => attach(win)
