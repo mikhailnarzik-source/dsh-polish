@@ -194,7 +194,7 @@ select option:checked {
             const key = String(event.key ?? '').toLowerCase()
             const code = String(event.code ?? '')
             const withControl = event.ctrlKey === true || event.metaKey === true
-            const isReload = withControl && (key === 'r' || code === 'KeyR')
+            const isReload = withControl && (key === 'r' || key === 'к' || code === 'KeyR')
             const isF5 = event.key === 'F5' || code === 'F5'
             if (!isReload && !isF5) return
             event.preventDefault()
