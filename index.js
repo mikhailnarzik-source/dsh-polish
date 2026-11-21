@@ -125,7 +125,7 @@ function execute(command, args, timeout) {
 }
 
 export const name = 'dsh-polish'
-export const inject = ['connection']
+export const inject = ['connection', 'tools']
 
 const UPDATES_PATH = '/api/dsh-polish/updates'
 const HEALTH_PATH = '/api/dsh-polish/health'
@@ -541,7 +541,76 @@ async function fixSecrets() {
 export const AUTO_UPDATE_DELAY_MS = 90_000
 export const AUTO_UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1_000
 
+/** Открыть инструмент «обновить приложение» и перехват сочетаний в окнах. */
+async function installReloadSupport(tool) {
+  let windows = []
+  let listener = null
+  try {
+    const electron = await import('electron')
+    const BrowserWindow = electron.BrowserWindow ?? electron.default?.BrowserWindow
+    const app = electron.app ?? electron.default?.app
+    if (BrowserWindow === undefined) return
+    windows = BrowserWindow.getAllWindows()
+
+    /** Перехват Ctrl+R и F5 в окне. */
+    const attach = (win) => {
+      const contents = win?.webContents
+      if (contents === undefined || contents === null) return
+      if (contents.__dshReloadHooked === true) return
+      contents.__dshReloadHooked = true
+      contents.on('before-input-event', (event, input) => {
+        if (input.type !== 'keyDown' || input.isAutoRepeat === true) return
+        const key = String(input.key ?? '').toLowerCase()
+        const withControl = input.control === true || input.meta === true
+        const isReload = (withControl && key === 'r') || input.key === 'F5'
+        if (!isReload) return
+        event.preventDefault()
+        try { contents.reload() } catch { /* окно уже закрыто */ }
+      })
+      if (typeof contents.once === 'function') contents.once('destroyed', () => { contents.__dshReloadHooked = false })
+    }
+
+    for (const win of windows) attach(win)
+    if (app !== undefined && typeof app.on === 'function') {
+      listener = (_event, win) => attach(win)
+      app.on('browser-window-created', listener)
+    }
+  } catch (error) {
+    console.error('[dsh-polish] перехват сочетаний недоступен:', error)
+  }
+
+  tool({
+    name: 'app_reload',
+    description: 'Обновляет окно приложения DeepSeek Harness (аналог Ctrl+R). Полезно, если интерфейс завис или нужно подхватить новую версию плагина.',
+    parameters: { type: 'object', properties: {}, additionalProperties: false },
+    async execute() {
+      try {
+        const electron = await import('electron')
+        const BrowserWindow = electron.BrowserWindow ?? electron.default?.BrowserWindow
+        const all = BrowserWindow === undefined ? [] : BrowserWindow.getAllWindows()
+        if (all.length === 0) return '{"ok":false,"message":"окна приложения не найдены"}'
+        for (const win of all) {
+          try { win.webContents.reload() } catch { /* окно могло закрыться */ }
+        }
+        return JSON.stringify({ ok: true, windows: all.length })
+      } catch (error) {
+        return JSON.stringify({ ok: false, message: String(error?.message ?? error).slice(0, 160) })
+      }
+    },
+  })
+}
+
 export function apply(ctx) {
+  // Инструменты для агента: обновление окна приложения.
+  const tool = (definition) => {
+    try {
+      if (ctx.tools !== undefined && typeof ctx.tools.register === 'function') ctx.tools.register(definition)
+    } catch (error) {
+      console.error('[dsh-polish] инструмент не зарегистрирован:', definition.name, error)
+    }
+  }
+  void installReloadSupport(tool)
+
   try {
     ctx.effect(() => {
       ctx.connection.fetch.register({
