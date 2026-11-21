@@ -7,6 +7,7 @@
  *   3. Исправления того, что можно починить без человека.
  */
 import { execFile } from 'node:child_process'
+import { appendFileSync } from 'node:fs'
 import { existsSync } from 'node:fs'
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { connect } from 'node:net'
@@ -560,11 +561,16 @@ async function installReloadSupport(tool) {
       contents.__dshReloadHooked = true
       contents.on('before-input-event', (event, input) => {
         if (input.type !== 'keyDown' || input.isAutoRepeat === true) return
+        try {
+          if (input.control === true || input.meta === true || input.alt === true || input.key === 'F5' || input.code === 'F5') {
+            appendFileSync('E:/DeepSeek Harness/.tools/polish-input.log', JSON.stringify({ key: input.key, code: input.code, control: input.control, meta: input.meta, alt: input.alt, shift: input.shift }) + String.fromCharCode(10))
+          }
+        } catch { /* диагностика не критична */ }
         const key = String(input.key ?? '').toLowerCase()
         const code = String(input.code ?? '')
         const withControl = input.control === true || input.meta === true
         // code важнее key: на русской раскладке физическая R даёт другой символ.
-        const isReload = (withControl && (key === 'r' || code === 'KeyR')) || input.key === 'F5' || code === 'F5'
+        const isReload = (withControl && (key === 'r' || key === 'к' || code === 'KeyR')) || input.key === 'F5' || code === 'F5'
         if (!isReload) return
         event.preventDefault()
         try { contents.reload() } catch { /* окно уже закрыто */ }
