@@ -537,6 +537,10 @@ async function fixSecrets() {
   return { ok: true, message: 'шаблон создан: browser-secrets.env' }
 }
 
+/** Первая проверка после старта DSH и период повторных проверок. */
+export const AUTO_UPDATE_DELAY_MS = 90_000
+export const AUTO_UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1_000
+
 export function apply(ctx) {
   try {
     ctx.effect(() => {
@@ -577,7 +581,32 @@ export function apply(ctx) {
             const bad = health.checks.filter((check) => check.ok !== true)
             await appendLog({ kind: 'health', ok: bad.length === 0, text: bad.length === 0 ? 'все проверки пройдены' : 'требуют внимания: ' + bad.map((check) => check.title).join(', ') })
             return json(health)
-          } catch (error) {
+        
+    // Фон: проверяем версии и сами ставим новые, чтобы не нажимать кнопку.
+    ctx.effect(() => {
+      let stopped = false
+      const tick = async () => {
+        if (stopped) return
+        if (process.env.DSH_AUTO_UPDATE === 'off') return
+        try {
+          const result = await updateAll(true)
+          const updated = Number(result?.updated ?? 0)
+          if (updated > 0) await appendLog({ kind: 'auto-update', ok: true, text: 'обновлено плагинов: ' + updated })
+        } catch (error) {
+          await appendLog({ kind: 'auto-update', ok: false, text: String(error?.message ?? error).slice(0, 200) })
+        }
+      }
+      const first = setTimeout(() => { void tick() }, AUTO_UPDATE_DELAY_MS)
+      const periodic = setInterval(() => { void tick() }, AUTO_UPDATE_INTERVAL_MS)
+      if (typeof first.unref === 'function') first.unref()
+      if (typeof periodic.unref === 'function') periodic.unref()
+      return () => {
+        stopped = true
+        clearTimeout(first)
+        clearInterval(periodic)
+      }
+    }, 'dsh-polish: auto update')
+  } catch (error) {
             return json({ ok: false, message: error instanceof Error ? error.message : String(error) })
           }
         },
