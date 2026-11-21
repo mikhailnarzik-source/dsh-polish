@@ -350,7 +350,7 @@ async function collectHealth(ctx) {
     secretsLines = (await readFile(secretsPath, 'utf8'))
       .split('\n')
       .map((line) => line.trim())
-      .filter((line) => line !== '' && !line.startsWith('#')).length
+      .filter((line) => /^[A-Za-z0-9_]+=.+$/.test(line)).length
   } catch {
     secretsLines = -1
   }
