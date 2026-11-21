@@ -164,6 +164,52 @@ select option:checked {
 
 
     /** Список доступных обновлений наших плагинов. */
+
+    /** Свёрнутая строка плагина: заголовок, пояснение и «Открыть». */
+    function CollapsedItem({ title, summary, badge, children }) {
+      const [open, setOpen] = React.useState(false)
+      const box = {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+        padding: '10px 12px',
+        borderRadius: 10,
+        border: '1px solid rgba(128,128,128,0.22)',
+        background: 'rgba(128,128,128,0.05)',
+      }
+      return h(
+        'div',
+        { style: box },
+        h(
+          'div',
+          { style: { display: 'flex', alignItems: 'center', gap: 10 } },
+          h('span', { style: { fontSize: 13, fontWeight: 600 } }, title),
+          badge !== undefined && badge !== '' ? h('span', { style: { fontSize: 10.5, padding: '1px 7px', borderRadius: 999, background: 'rgba(106,139,208,0.22)', color: 'inherit', opacity: 0.9 } }, badge) : null,
+          h('span', { style: { flex: 1, fontSize: 11.5, opacity: 0.6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, summary ?? ''),
+          h(
+            'button',
+            {
+              type: 'button',
+              onClick: () => setOpen(!open),
+              style: {
+                padding: '4px 12px',
+                borderRadius: 8,
+                border: '1px solid rgba(128,128,128,0.32)',
+                background: open ? 'rgba(106,139,208,0.18)' : 'rgba(128,128,128,0.1)',
+                color: 'inherit',
+                font: 'inherit',
+                fontSize: 12,
+                cursor: 'pointer',
+                flex: '0 0 auto',
+              },
+            },
+            open ? 'Свернуть' : 'Открыть',
+          ),
+        ),
+        open ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10 } }, children) : null,
+      )
+    }
+
     function UpdatesBlock() {
       const [rows, setRows] = React.useState(null);
       const [busy, setBusy] = React.useState(false);
@@ -438,7 +484,7 @@ select option:checked {
               label: () => translate('title'),
               locale: NS,
             },
-            PolishCard,
+            () => h(CollapsedItem, { title: 'Оформление интерфейса', summary: 'Наведение, фокус, тема; состояние и обновления', badge: 'наше' }, h(PolishCard)),
           ),
         )
       } catch (error) {
