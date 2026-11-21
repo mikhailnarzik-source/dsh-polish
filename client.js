@@ -40,6 +40,19 @@ window.__ModuleLoader__.load({
     }
 
     const CSS = `
+
+/* Единый вид карточек наших плагинов. */
+.dsh-our-card {
+  padding: 12px !important;
+  border-radius: 10px !important;
+  border: 1px solid rgba(128, 128, 128, 0.22) !important;
+  background: rgba(128, 128, 128, 0.05) !important;
+}
+.dsh-our-card button {
+  min-height: 26px;
+  border-radius: 8px !important;
+}
+
 /* --- dsh-polish ------------------------------------------------------- */
 button:not(:disabled) {
   transition: filter .12s ease, background-color .12s ease, border-color .12s ease;
@@ -180,7 +193,7 @@ select option:checked {
       }
       return h(
         'div',
-        { style: box },
+        { className: 'dsh-our-card', style: box },
         h(
           'div',
           { style: { display: 'flex', alignItems: 'center', gap: 10 } },
