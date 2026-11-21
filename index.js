@@ -101,7 +101,7 @@ async function updateAll(apply) {
     applied: true,
     results,
     message: failed.length === 0
-      ? 'обновлено: ' + results.length + ' — перезапусти DSH'
+      ? 'обновлено: ' + results.map((item) => item.name + (item.to ? ' → ' + item.to : '')).join(', ') + ' — перезапусти DSH'
       : 'часть плагинов не обновилась: ' + failed.map((item) => item.name).join(', '),
   }
 }
