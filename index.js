@@ -561,8 +561,10 @@ async function installReloadSupport(tool) {
       contents.on('before-input-event', (event, input) => {
         if (input.type !== 'keyDown' || input.isAutoRepeat === true) return
         const key = String(input.key ?? '').toLowerCase()
+        const code = String(input.code ?? '')
         const withControl = input.control === true || input.meta === true
-        const isReload = (withControl && key === 'r') || input.key === 'F5'
+        // code важнее key: на русской раскладке физическая R даёт другой символ.
+        const isReload = (withControl && (key === 'r' || code === 'KeyR')) || input.key === 'F5' || code === 'F5'
         if (!isReload) return
         event.preventDefault()
         try { contents.reload() } catch { /* окно уже закрыто */ }

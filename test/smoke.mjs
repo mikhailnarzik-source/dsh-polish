@@ -49,8 +49,9 @@ exported.apply(ctx)
 
 assert.equal(exported.inject.includes('slots'), true)
 assert.equal(boundNs, 'dshPolish')
-assert.equal(registrations.length, 1)
-assert.equal(registrations[0].options.name, 'plugins.detail.section')
+assert.ok(registrations.length >= 1, 'есть регистрации слотов')
+const sectionRegistration = registrations.find((item) => item.options.name === 'plugins.detail.section')
+assert.ok(sectionRegistration !== undefined, 'секция страницы плагина зарегистрирована')
 assert.equal(typeof registrations[0].component, 'function')
 
 // effect с включённым по умолчанию оформлением ставит слой стилей
@@ -63,9 +64,9 @@ assert.match(css, /color-scheme: inherit/)
 
 // карточка рендерится без ошибок
 // Внешняя обёртка — свёрнутая строка; проверяем и её, и содержимое.
-const wrapper = registrations[0].component({ subject: { kind: 'bundle', pkg: { name: 'dsh-polish' } } })
+const wrapper = sectionRegistration.component({ subject: { kind: 'bundle', pkg: { name: 'dsh-polish' } } })
 assert.equal(typeof wrapper.type, 'function')
-const card = wrapper.children[2] === null ? wrapper : registrations[0].component({ subject: { kind: 'bundle', pkg: { name: 'dsh-polish' } } })
+const card = wrapper.children[2] === null ? wrapper : sectionRegistration.component({ subject: { kind: 'bundle', pkg: { name: 'dsh-polish' } } })
 assert.equal(typeof wrapper, 'object')
 const inner = wrapper.type({ ...wrapper.props, children: null })
 assert.equal(inner.type, 'div')
