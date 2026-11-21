@@ -94,6 +94,24 @@ select option:checked {
 * {
   scrollbar-color: rgba(128, 128, 128, 0.45) transparent;
 }
+
+/* Страница плагина: сначала блок управления, затем описание. */
+[class*="detailMain"] {
+  display: flex !important;
+  flex-direction: column !important;
+}
+[class*="detailMain"] > [class*="detailSections"] {
+  order: 1 !important;
+  margin-top: 8px !important;
+}
+[class*="detailMain"] > [class*="detailDesc"] {
+  order: 2 !important;
+  margin-top: 8px !important;
+}
+[class*="detailMain"] > [class*="detailTitle"],
+[class*="detailMain"] > [class*="titleRow"] {
+  order: 0 !important;
+}
 `
 
 
