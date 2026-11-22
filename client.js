@@ -445,6 +445,57 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
     const OK_COLOR = 'var(--dsw-alias-state-success-primary)'
     const BAD_COLOR = 'var(--dsw-alias-state-error-primary)'
 
+    /**
+     * Статус-чип — та же система, что кнопки (спека v2): height 32, радиус 10,
+     * padding 0 12, border 1px, шрифт 600 12.5, inline-flex gap 6. Фон и рамка —
+     * мягкая заливка токеном по смыслу, текст — тем же токеном, поэтому точка
+     * 6 px слева красится `currentColor`.
+     */
+    const CHIP_BASE = {
+      boxSizing: 'border-box',
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      height: 32,
+      padding: '0 12px',
+      borderRadius: 10,
+      border: '1px solid color-mix(in srgb, ' + ACCENT + ' 55%, transparent)',
+      background: 'color-mix(in srgb, ' + ACCENT + ' 18%, transparent)',
+      color: ACCENT,
+      fontSize: 12.5,
+      fontWeight: 600,
+      lineHeight: 1,
+      whiteSpace: 'nowrap',
+      flex: '0 0 auto',
+      minWidth: 0,
+    }
+    const CHIP_TONES = {
+      brand: {},
+      ok: {
+        border: '1px solid color-mix(in srgb, ' + OK_COLOR + ' 55%, transparent)',
+        background: 'color-mix(in srgb, ' + OK_COLOR + ' 16%, transparent)',
+        color: OK_COLOR,
+      },
+      warn: {
+        border: '1px solid color-mix(in srgb, var(--dsw-alias-state-warn-primary) 55%, transparent)',
+        background: 'color-mix(in srgb, var(--dsw-alias-state-warn-primary) 16%, transparent)',
+        color: 'var(--dsw-alias-state-warn-primary)',
+      },
+      error: {
+        border: '1px solid color-mix(in srgb, ' + BAD_COLOR + ' 55%, transparent)',
+        background: 'color-mix(in srgb, ' + BAD_COLOR + ' 16%, transparent)',
+        color: BAD_COLOR,
+      },
+      muted: {
+        border: '1px solid var(--dsw-alias-border-l2)',
+        background: 'color-mix(in srgb, var(--dsw-alias-label-primary) 7%, transparent)',
+        color: 'var(--dsw-alias-label-secondary)',
+      },
+    }
+    const chipStyle = (tone) => ({ ...CHIP_BASE, ...(CHIP_TONES[tone] ?? CHIP_TONES.brand) })
+    const CHIP_DOT = { boxSizing: 'border-box', width: 6, height: 6, borderRadius: '50%', background: 'currentColor', flex: '0 0 auto' }
+
     const S = {
       page: {
         width: '100%',
@@ -487,19 +538,6 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
         overflow: 'hidden',
       },
       actions: { marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
-      chip: {
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 6,
-        padding: '3px 9px',
-        borderRadius: 999,
-        fontSize: 12,
-        lineHeight: 1.4,
-        color: 'var(--dsw-alias-label-secondary)',
-        background: 'color-mix(in srgb, var(--dsw-alias-brand-primary) 10%, transparent)',
-        whiteSpace: 'nowrap',
-      },
-      chipDot: (color) => ({ width: 7, height: 7, borderRadius: 999, background: color, flex: 'none' }),
       refresh: {
         boxSizing: 'border-box',
         display: 'inline-flex',
@@ -1610,12 +1648,12 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
       )
     }
 
-    /** Статус-чип: цветная точка и текст. */
-    function chipNode(label, color) {
+    /** Статус-чип: кнопочная форма (высота 32, radius 10) и точка 6 px. */
+    function chipNode(label, tone) {
       return h(
         'span',
-        { style: S.chip, 'data-dsh-polish-chip': 'status' },
-        h('span', { style: S.chipDot(color ?? ACCENT) }),
+        { style: chipStyle(tone ?? 'brand'), 'data-dsh-polish-chip': 'status', role: 'status' },
+        h('span', { style: CHIP_DOT }),
         label,
       )
     }
@@ -1636,7 +1674,7 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
       }
       const actions = chipNode(
         fmt(t('panelsVisibleCount'), { count: state.visible.length, total: SHORTCUT_PLUGINS.length }),
-        ACCENT,
+        'brand',
       )
       return cardSection(
         'panels',
@@ -1667,7 +1705,7 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
                 }),
                 h('span', null, t('panelsShowLabel')),
               ),
-              visible ? chipNode(pinned ? t('panelsPinned') : t('panelsInMore'), pinned ? OK_COLOR : ACCENT) : null,
+              visible ? chipNode(pinned ? t('panelsPinned') : t('panelsInMore'), pinned ? 'ok' : 'brand') : null,
             )
           }),
         ),
@@ -1855,7 +1893,7 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
         rows !== null
           ? chipNode(
               behind.length === 0 ? t('allCurrent') : fmt(t('available'), { count: behind.length }),
-              behind.length === 0 ? OK_COLOR : 'var(--dsw-alias-state-warn-primary)',
+              behind.length === 0 ? 'ok' : 'warn',
             )
           : null,
         behind.length > 0 ? smallButton(t('copyCommands'), copyCommands, false) : null,
@@ -1990,7 +2028,7 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
         state !== null
           ? chipNode(
               bad.length === 0 ? t('allOk') : fmt(t('needsAttention'), { count: bad.length }),
-              bad.length === 0 ? OK_COLOR : 'var(--dsw-alias-state-warn-primary)',
+              bad.length === 0 ? 'ok' : 'warn',
             )
           : null,
       )
@@ -2092,7 +2130,7 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
           h(
             'div',
             { style: S.actions, 'data-dsh-polish-actions': 'actions' },
-            chipNode(enabled ? t('on') : t('off'), enabled ? OK_COLOR : 'var(--dsw-alias-label-tertiary)'),
+            chipNode(enabled ? t('on') : t('off'), enabled ? 'ok' : 'muted'),
             h(
               'button',
               {
@@ -2138,7 +2176,7 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
             h('span', { style: S.cardTitle }, t('title')),
             h('span', { style: S.hint }, t('summary')),
           ),
-          chipNode(enabled ? t('on') : t('off'), enabled ? OK_COLOR : 'var(--dsw-alias-label-tertiary)'),
+          chipNode(enabled ? t('on') : t('off'), enabled ? 'ok' : 'muted'),
         ),
       )
     }
