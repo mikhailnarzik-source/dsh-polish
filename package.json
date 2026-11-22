@@ -1,7 +1,7 @@
 {
   "name": "dsh-polish",
-  "version": "1.4.15",
-  "description": "Единый слой оформления для всех плагинов DSH: подсветка наведения на кнопках, заметный фокус с клавиатуры, правильные цвета нативных полей, выравнивание длинных абзацев по ширине и возврат откреплённых панелей левого меню",
+  "version": "1.4.16",
+  "description": "Единый слой оформления для всех плагинов DSH: подсветка наведения на кнопках, заметный фокус с клавиатуры, правильные цвета нативных полей, выравнивание длинных абзацев по ширине и возможность закрепить в левом меню любой наш плагин",
   "type": "module",
   "license": "MIT",
   "keywords": [
@@ -40,7 +40,9 @@
       "inject": [
         "@deepseek-ai/dsh-client-locale",
         "@deepseek-ai/dsh-client-ui-plugin-manager",
-        "@deepseek-ai/dsh-client-ui-slots"
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-sidebar"
       ]
     }
   },

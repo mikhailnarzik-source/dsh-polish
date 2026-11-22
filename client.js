@@ -32,6 +32,32 @@ window.__ModuleLoader__.load({
       '<path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
       '</svg>'
 
+    /**
+     * Плагины без собственной панели. DSH умеет закреплять в левой панели
+     * только то, что там уже есть (main-панель + строка `sidebar.panellist`),
+     * поэтому для каждого такого плагина плагин регистрирует пару: заглушку
+     * панели (`main`, ключ `plugin-<id>`) и строку левой панели
+     * (`sidebar.panellist`, id `plugin-<id>`). Ключ и id обязаны совпадать —
+     * строка открывает main-панель по тому же id. Эмодзи — иконка строки.
+     */
+    const SHORTCUT_PLUGINS = [
+      { id: 'cards', emoji: '🧩' },
+      { id: 'compact', emoji: '🗜️' },
+      { id: 'review', emoji: '📝' },
+      { id: 'notify', emoji: '🔔' },
+      { id: 'team', emoji: '👥' },
+      { id: 'vault', emoji: '🔑' },
+      { id: 'pyrus', emoji: '📋' },
+      { id: 'inbox', emoji: '📥' },
+      { id: 'polish', emoji: '🎨' },
+      { id: 'whale', emoji: '🐳' },
+      { id: 'browser', emoji: '🌐' },
+    ]
+    // Префикс ключа и id: `plugin-cards`, `plugin-review`, …
+    const SHORTCUT_PREFIX = 'plugin-'
+    // id панели «Плагины» (MainPanelId из dsh-client-ui-plugin-manager).
+    const PLUGINS_PANEL_ID = 'plugins'
+
     const en = {
       title: 'Interface polish',
       heading: 'Appearance of all plugins',
@@ -80,9 +106,43 @@ window.__ModuleLoader__.load({
       reloadHint: 'Reload page (Ctrl+R)',
       summary: 'Appearance of all plugins, checks and updates.',
       panelsTitle: 'Panels in the left menu',
-      panelsHint: 'Unpinned a panel? It stays in the “More” menu — pin it back there.',
+      panelsHint: 'Any panel can be pinned — use the pin button in the left sidebar. Unpinned a panel? It stays in the “More” menu — pin it back there.',
       panelsPinTitle: 'Bring all panels back to the left sidebar',
       panelsPinAll: 'Pin all panels ({count})',
+      panelsUnpinnedTitle: 'Unpinned panels',
+      panelsUnpinnedHint: 'Pin the launchers you need — they return to the left sidebar.',
+      panelsPinOne: 'Pin',
+      panelsPinOneTitle: 'Pin “{name}” to the left sidebar',
+      panelsAllPinned: 'All panels are in the left sidebar already.',
+      shortcutHeading: 'A shortcut panel: a description and a way to the settings',
+      shortcutChip: 'In the left sidebar',
+      shortcutAbout: 'About the plugin',
+      shortcutHint: 'Pin or unpin the panel with the pin button in the left sidebar. Unpinned panels stay in the “More” menu — pin them back there.',
+      shortcutSettings: 'Open plugin settings',
+      shortcutSettingsFailed: 'could not open the Plugins page',
+      shortcutSettingsHint: 'The “Plugins” page opens: install, update and configure the plugin there.',
+      'shortcut.cards.title': 'Cards',
+      'shortcut.cards.desc': 'Answer cards in the chat: a dsh-card block with JSON becomes a tidy summary with a title, rows and a list.',
+      'shortcut.compact.title': 'Dialog compression',
+      'shortcut.compact.desc': 'Compresses a long dialog into a short summary of the session log: task, what was done, files, commands, questions and errors.',
+      'shortcut.review.title': 'Review changes',
+      'shortcut.review.desc': 'A workplace after edits: changed files with a diff, reverting one file, tests, commit with push and a pull request.',
+      'shortcut.notify.title': 'Notifications',
+      'shortcut.notify.desc': 'Floating cards about what happens in Harness: a task finished, the agent waits for confirmation, or something failed.',
+      'shortcut.team.title': 'Team',
+      'shortcut.team.desc': 'Assembles a task for several helpers: a template, the task description and roles — ready text for the input field.',
+      'shortcut.vault.title': 'Vault',
+      'shortcut.vault.desc': 'Tokens, keys and passwords in one encrypted file; the interface shows only counters and the agent gets a value on request.',
+      'shortcut.pyrus.title': 'Pyrus: my tasks',
+      'shortcut.pyrus.desc': 'Connects Pyrus to DSH: “My tasks”, opening a task with comments, adding a comment and closing a task.',
+      'shortcut.inbox.title': 'Inbox',
+      'shortcut.inbox.desc': 'A Telegram bot for DSH: messages reach the history, and an allowed chat can manage sessions and tasks.',
+      'shortcut.polish.title': 'Interface polish',
+      'shortcut.polish.desc': 'One appearance layer for every plugin plus environment checks, a journal and updates on its own page.',
+      'shortcut.whale.title': 'Whale helper',
+      'shortcut.whale.desc': 'A little whale in the DSH window: rests while you think, celebrates finished tasks and wakes you up when you get distracted.',
+      'shortcut.browser.title': 'Launch browser',
+      'shortcut.browser.desc': 'One click opens Chrome with a separate agent profile and debug port 9222 for the assistant to connect.',
     }
     const ru = {
       reload: 'Обновить',
@@ -132,9 +192,43 @@ window.__ModuleLoader__.load({
       reloadHint: 'Обновить страницу (Ctrl+R)',
       summary: 'Внешний вид всех плагинов, проверки и обновления.',
       panelsTitle: 'Панели в левом меню',
-      panelsHint: 'Открепили панель? Она осталась в меню «Ещё» — там её можно закрепить обратно.',
+      panelsHint: 'Закрепить можно любую панель — кнопкой-булавкой в левой панели. Открепили панель? Она осталась в меню «Ещё» — там её можно закрепить обратно.',
       panelsPinTitle: 'Вернуть все панели в левую панель',
       panelsPinAll: 'Закрепить все панели ({count})',
+      panelsUnpinnedTitle: 'Откреплённые панели',
+      panelsUnpinnedHint: 'Закрепите нужные панели — они вернутся в левую панель.',
+      panelsPinOne: 'Закрепить',
+      panelsPinOneTitle: 'Закрепить «{name}» в левой панели',
+      panelsAllPinned: 'Все панели уже в левом меню.',
+      shortcutHeading: 'Панель-ярлык плагина: описание и переход к настройкам',
+      shortcutChip: 'В левом меню',
+      shortcutAbout: 'О плагине',
+      shortcutHint: 'Закрепить или открепить панель можно кнопкой-булавкой в левой панели. Откреплённые панели остаются в меню «Ещё» — там их можно вернуть.',
+      shortcutSettings: 'Открыть настройки плагина',
+      shortcutSettingsFailed: 'не удалось открыть страницу «Плагины»',
+      shortcutSettingsHint: 'Откроется страница «Плагины»: там плагин можно установить, обновить и настроить.',
+      'shortcut.cards.title': 'Карточки',
+      'shortcut.cards.desc': 'Ответы-карточки в чате: блок dsh-card с JSON превращается в аккуратную сводку с заголовком, строками и списком.',
+      'shortcut.compact.title': 'Сжатие диалога',
+      'shortcut.compact.desc': 'Сжимает длинный диалог в короткую выжимку по журналу сессии: задача, что сделано, файлы, команды, вопросы и ошибки.',
+      'shortcut.review.title': 'Ревью изменений',
+      'shortcut.review.desc': 'Рабочее место после правок: изменённые файлы с diff, откат файла, тесты, коммит с push и создание pull request.',
+      'shortcut.notify.title': 'Уведомления',
+      'shortcut.notify.desc': 'Всплывающие карточки о том, что происходит в Harness: задача выполнена, агент ждёт подтверждения или что-то упало.',
+      'shortcut.team.title': 'Команда',
+      'shortcut.team.desc': 'Собирает задание для нескольких помощников: шаблон, описание задачи и роли — готовый текст для поля ввода.',
+      'shortcut.vault.title': 'Сейф',
+      'shortcut.vault.desc': 'Токены, ключи и пароли в одном зашифрованном файле; в интерфейсе видны только счётчики, значения — по запросу агента.',
+      'shortcut.pyrus.title': 'Pyrus: мои задачи',
+      'shortcut.pyrus.desc': 'Подключает Pyrus к DSH: «Мои задачи», открытие задачи с комментариями, добавление комментария и закрытие задачи.',
+      'shortcut.inbox.title': 'Входящие',
+      'shortcut.inbox.desc': 'Telegram-бот для DSH: сообщения попадают в историю, а разрешённым чатом можно управлять сессиями и задачами.',
+      'shortcut.polish.title': 'Оформление интерфейса',
+      'shortcut.polish.desc': 'Общий слой оформления всех плагинов плюс проверки окружения, журнал и обновления на своей странице.',
+      'shortcut.whale.title': 'Кит-помощник',
+      'shortcut.whale.desc': 'Маленький кит в окне DSH: отдыхает, пока вы думаете, радуется завершённым задачам и будит, если отвлеклись.',
+      'shortcut.browser.title': 'Запуск браузера',
+      'shortcut.browser.desc': 'Один клик открывает Chrome с отдельным профилем агента и портом отладки 9222 для подключения ассистента.',
     }
 
     const CSS = `
@@ -164,6 +258,14 @@ button:active:not(:disabled) {
 button:disabled {
   cursor: default;
   opacity: .6;
+}
+/* Кнопки «Закрепить» в меню «Ещё»: мягкая подсветка и кольцо фокуса. */
+[data-dsh-polish-button='pin']:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+[data-dsh-polish-button='pin']:focus-visible {
+  outline: 2px solid rgba(84, 126, 214, 0.75);
+  outline-offset: 2px;
 }
 button:focus-visible,
 [role='button']:focus-visible,
@@ -390,7 +492,14 @@ select option:checked {
       },
       stripe: { flex: 'none', width: 3, height: 14, borderRadius: 2, background: ACCENT },
       hint: { margin: 0, fontSize: 12, lineHeight: 1.5, color: 'var(--dsw-alias-label-tertiary)' },
-      text: { margin: 0, fontSize: 12.5, lineHeight: 1.5, color: 'var(--dsw-alias-label-secondary)' },
+      text: {
+        margin: 0,
+        fontSize: 12.5,
+        lineHeight: 1.5,
+        color: 'var(--dsw-alias-label-secondary)',
+        textAlign: 'justify',
+        hyphens: 'auto',
+      },
       row: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
       list: { display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 },
       listRow: {
@@ -476,11 +585,90 @@ select option:checked {
       error: { margin: 0, fontSize: 12, lineHeight: 1.5, color: BAD_COLOR },
       panellistActions: {
         display: 'flex',
-        alignItems: 'center',
-        flexWrap: 'wrap',
-        gap: 8,
+        flexDirection: 'column',
+        alignItems: 'stretch',
+        gap: 6,
         padding: '8px 4px 4px',
         minWidth: 0,
+        maxHeight: 'min(60vh, 420px)',
+        overflowY: 'auto',
+        overflowX: 'hidden',
+      },
+      panellistTitle: {
+        margin: '0 0 2px',
+        flexShrink: 0,
+        fontSize: 11,
+        fontWeight: 600,
+        letterSpacing: '0.04em',
+        textTransform: 'uppercase',
+        color: 'var(--dsw-alias-label-tertiary)',
+      },
+      panellistHintText: {
+        margin: 0,
+        flexShrink: 0,
+        fontSize: 12,
+        lineHeight: 1.45,
+        color: 'var(--dsw-alias-label-secondary)',
+        minWidth: 0,
+        overflowWrap: 'anywhere',
+      },
+      panellistRow: {
+        display: 'flex',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        flexShrink: 0,
+        gap: 8,
+        padding: '2px 0',
+        minWidth: 0,
+      },
+      panellistLabel: {
+        flex: '1 1 120px',
+        minWidth: 0,
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+        fontSize: 12.5,
+        color: 'var(--dsw-alias-label-primary)',
+      },
+      panellistPin: {
+        boxSizing: 'border-box',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+        height: 32,
+        padding: '0 10px',
+        borderRadius: 10,
+        border: '1px solid var(--dsw-alias-border-l4)',
+        background: 'transparent',
+        color: 'var(--dsw-alias-label-primary)',
+        font: 'inherit',
+        fontSize: 12,
+        fontWeight: 600,
+        lineHeight: '20px',
+        whiteSpace: 'nowrap',
+        cursor: 'pointer',
+      },
+      panellistPinAll: {
+        boxSizing: 'border-box',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        flexShrink: 0,
+        alignSelf: 'flex-start',
+        height: 36,
+        padding: '0 14px',
+        borderRadius: 10,
+        border: '1px solid color-mix(in srgb, var(--dsw-alias-brand-primary) 55%, transparent)',
+        background: 'color-mix(in srgb, var(--dsw-alias-brand-primary) 18%, transparent)',
+        color: 'var(--dsw-alias-brand-primary)',
+        font: 'inherit',
+        fontSize: 12.5,
+        fontWeight: 600,
+        lineHeight: '20px',
+        whiteSpace: 'nowrap',
+        cursor: 'pointer',
       },
     }
 
@@ -491,6 +679,7 @@ select option:checked {
       '[data-dsh-polish-card]{justify-content:flex-start}' +
       '[data-dsh-polish-card] > *:last-child{margin-top:auto}' +
       '[data-dsh-polish-button="secondary"]:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover) !important}' +
+      '[data-dsh-polish-button="pin"]:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover) !important}' +
       '[data-dsh-polish-button="refresh"]:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover) !important}' +
       '[data-dsh-polish-button="primary"]:hover:not(:disabled){background:color-mix(in srgb, var(--dsw-alias-brand-primary) 28%, transparent) !important}' +
       '[data-dsh-polish-button]:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}' +
@@ -1030,47 +1219,212 @@ select option:checked {
     /** Карточка-подсказка: где найти и как вернуть откреплённую панель. */
     function PanelsBlock() {
       const t = (key) => translate(key)
-      return cardSection('panels', t('panelsTitle'), null, h('p', { style: S.text }, t('panelsHint')))
+      return cardSection(
+        'panels',
+        t('panelsTitle'),
+        null,
+        h('p', { style: S.text }, t('panelsHint')),
+        h('p', { style: S.hint }, t('shortcutHint')),
+      )
     }
 
     /**
-     * Меню «Ещё» в левой панели: кнопка «Закрепить все панели (N)».
+     * Открыть страницу «Плагины» из панели-заглушки. Внутри main-панели доступа
+     * к pins нет, зато есть сервис раскладки: `ctx.layout.selectPanel('plugins')`.
+     * @returns {boolean} true, если переход выполнен.
+     */
+    function openPluginsPanel(ctx) {
+      try {
+        const layout = ctx?.layout ?? (typeof ctx?.get === 'function' ? ctx.get('layout') : undefined)
+        if (layout !== undefined && layout !== null && typeof layout.selectPanel === 'function') {
+          layout.selectPanel(PLUGINS_PANEL_ID)
+          return true
+        }
+      } catch (error) {
+        console.error('[dsh-polish] страница «Плагины» недоступна:', error)
+      }
+      return false
+    }
+
+    /**
+     * Иконка строки левой панели для плагина без собственной панели: эмодзи
+     * плагина в размер, который просит хост (`size` — 16 в широкой панели,
+     * 18 в свёрнутой). Подпись и выбранное состояние рисует сама левая панель.
+     */
+    function createShortcutIcon(plugin) {
+      return function ShortcutIcon(props) {
+        const requested = Number(props?.size)
+        const size = Number.isFinite(requested) && requested > 0 ? requested : 16
+        return h(
+          'span',
+          {
+            'data-dsh-polish-icon': plugin.id,
+            'aria-hidden': true,
+            style: {
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: size,
+              height: size,
+              fontSize: Math.round(size * 0.95),
+              lineHeight: 1,
+            },
+          },
+          plugin.emoji,
+        )
+      }
+    }
+
+    /**
+     * Заглушка main-панели для плагина без собственной панели: шапка с эмодзи,
+     * названием и статус-чипом, карточка с описанием и кнопкой «Открыть
+     * настройки плагина». Кнопку-булавку не рисуем: закрепить и открепить панель
+     * можно только в левой панели, а откреплённые ждут в меню «Ещё».
+     */
+    function createShortcutPage(plugin, ctx) {
+      const titleKey = 'shortcut.' + plugin.id + '.title'
+      const descKey = 'shortcut.' + plugin.id + '.desc'
+      return function ShortcutPage() {
+        const t = (key) => translate(key)
+        const [failed, setFailed] = React.useState(false)
+        const openSettings = () => {
+          setFailed(openPluginsPanel(ctx) !== true)
+        }
+        return h(
+          'div',
+          { style: S.page, 'data-dsh-polish-page': 'page', 'data-dsh-polish-shortcut': plugin.id },
+          h('style', null, PAGE_CSS),
+          h(
+            'div',
+            { style: S.header, 'data-dsh-polish-header': 'header' },
+            h('div', { style: S.logo, 'aria-hidden': true }, plugin.emoji),
+            h(
+              'div',
+              { style: S.titles },
+              h('h1', { style: S.heading }, t(titleKey)),
+              h('p', { style: S.subtitle }, t('shortcutHeading')),
+            ),
+            h(
+              'div',
+              { style: S.actions, 'data-dsh-polish-actions': 'actions' },
+              chipNode(t('shortcutChip'), ACCENT),
+            ),
+          ),
+          cardSection(
+            'shortcut',
+            t('shortcutAbout'),
+            null,
+            h('p', { style: S.text }, t(descKey)),
+            h('p', { style: S.hint }, t('shortcutHint')),
+            h(
+              'div',
+              { style: S.row },
+              h(
+                'button',
+                {
+                  type: 'button',
+                  style: S.primary,
+                  'data-dsh-polish-button': 'primary',
+                  'data-dsh-polish-open-settings': plugin.id,
+                  onClick: openSettings,
+                },
+                t('shortcutSettings'),
+              ),
+            ),
+            h('p', { style: S.hint }, t('shortcutSettingsHint')),
+            failed === true ? h('p', { style: S.error }, t('shortcutSettingsFailed')) : null,
+          ),
+        )
+      }
+    }
+
+    /**
+     * Меню «Ещё» в левой панели: список откреплённых панелей с кнопкой
+     * «Закрепить» у каждой и общая кнопка «Закрепить все панели (N)».
      * Слот рендерится внутри меню, поэтому после действия меню закрываем.
      */
-    function PinAllPanels(props) {
+    function PanellistActions(props) {
       const t = (key) => translate(key)
       const entries = Array.isArray(props?.entries) ? props.entries : []
-      if (entries.length === 0) return null
-      const pinAll = () => {
-        for (const entry of entries) {
-          const id = typeof entry?.id === 'string' ? entry.id : ''
-          if (id === '' || typeof props?.onPinnedChange !== 'function') continue
-          try {
-            props.onPinnedChange(id, true)
-          } catch (error) {
-            console.error('[dsh-polish] не удалось закрепить панель:', error)
-          }
-        }
+      const labelOf = (entry) =>
+        typeof entry?.label === 'string' && entry.label !== '' ? entry.label : String(entry?.id ?? '')
+      const pinned = entries.filter((entry) => typeof entry?.id === 'string' && entry.id !== '')
+      const unpinned = pinned.filter((entry) => entry.pinned !== true)
+      const dismiss = () => {
         try {
           if (typeof props?.onDismiss === 'function') props.onDismiss()
         } catch {
           // меню уже закрыто
         }
       }
+      const pin = (id) => {
+        if (typeof props?.onPinnedChange === 'function') {
+          try {
+            props.onPinnedChange(id, true)
+          } catch (error) {
+            console.error('[dsh-polish] не удалось закрепить панель:', error)
+          }
+        }
+        dismiss()
+      }
+      const pinAll = () => {
+        for (const entry of unpinned) {
+          if (typeof props?.onPinnedChange !== 'function') continue
+          try {
+            props.onPinnedChange(entry.id, true)
+          } catch (error) {
+            console.error('[dsh-polish] не удалось закрепить панель:', error)
+          }
+        }
+        dismiss()
+      }
+      if (pinned.length === 0) return null
       return h(
         'div',
-        { style: S.panellistActions, 'data-dsh-polish-panellist-actions': 'pin-all' },
+        { style: S.panellistActions, 'data-dsh-polish-panellist-actions': 'list' },
         h(
-          'button',
-          {
-            type: 'button',
-            style: S.primary,
-            'data-dsh-polish-button': 'primary',
-            title: t('panelsPinTitle'),
-            onClick: pinAll,
-          },
-          fmt(t('panelsPinAll'), { count: entries.length }),
+          'p',
+          { style: S.panellistTitle, 'data-dsh-polish-panellist-title': 'unpinned' },
+          t('panelsUnpinnedTitle'),
         ),
+        unpinned.length === 0
+          ? h('p', { style: S.panellistHintText, 'data-dsh-polish-all-pinned': 'true' }, t('panelsAllPinned'))
+          : h('p', { style: S.panellistHintText }, t('panelsUnpinnedHint')),
+        ...unpinned.map((entry) =>
+          h(
+            'div',
+            { key: entry.id, style: S.panellistRow, 'data-dsh-polish-pinnable': entry.id },
+            h('span', { style: S.panellistLabel, title: labelOf(entry) }, labelOf(entry)),
+            h(
+              'button',
+              {
+                type: 'button',
+                style: S.panellistPin,
+                'data-dsh-polish-button': 'pin',
+                'data-dsh-polish-pin': entry.id,
+                title: fmt(t('panelsPinOneTitle'), { name: labelOf(entry) }),
+                'aria-label': fmt(t('panelsPinOneTitle'), { name: labelOf(entry) }),
+                onClick: () => pin(entry.id),
+              },
+              h('span', { 'aria-hidden': true, style: { fontSize: 12, lineHeight: 1 } }, '📌'),
+              h('span', null, t('panelsPinOne')),
+            ),
+          ),
+        ),
+        unpinned.length > 0
+          ? h(
+              'button',
+              {
+                type: 'button',
+                style: S.panellistPinAll,
+                'data-dsh-polish-button': 'primary',
+                'data-dsh-polish-pin-all': 'button',
+                title: t('panelsPinTitle'),
+                onClick: pinAll,
+              },
+              fmt(t('panelsPinAll'), { count: unpinned.length }),
+            )
+          : null,
       )
     }
 
@@ -1426,6 +1780,40 @@ select option:checked {
       return h(PolishPage, props)
     }
 
+    /**
+     * Зарегистрировать main-панель и строку левой панели для каждого плагина
+     * без собственной панели. Ключ main-панели и id строки — `plugin-<id>`;
+     * они обязаны совпадать, иначе строка не откроет панель.
+     */
+    function applyShortcutPanels(ctx) {
+      SHORTCUT_PLUGINS.forEach((plugin, index) => {
+        const panelId = SHORTCUT_PREFIX + plugin.id
+        try {
+          ctx.slots.inject('main', () =>
+            ctx.slots.register({ name: 'main', key: panelId, locale: NS }, createShortcutPage(plugin, ctx)),
+          )
+        } catch (error) {
+          console.error('[dsh-polish] панель ' + panelId + ' недоступна:', error)
+        }
+        try {
+          ctx.slots.inject('sidebar.panellist', () =>
+            ctx.slots.register(
+              {
+                name: 'sidebar.panellist',
+                id: panelId,
+                order: 20 + index,
+                label: () => translate('shortcut.' + plugin.id + '.title'),
+                locale: NS,
+              },
+              createShortcutIcon(plugin),
+            ),
+          )
+        } catch (error) {
+          console.error('[dsh-polish] строка ' + panelId + ' в левой панели недоступна:', error)
+        }
+      })
+    }
+
     function apply(ctx) {
       const locale = ctx.locale
       locale.register(NS, { en, ru })
@@ -1470,17 +1858,18 @@ select option:checked {
         console.error('[dsh-polish] кнопка обновления недоступна:', error)
       }
 
-      // Меню «Ещё» в левой панели: возврат откреплённых панелей одним нажатием.
+      // Меню «Ещё» в левой панели: список откреплённых панелей с булавкой
+      // у каждой и кнопка «Закрепить все панели (N)».
       try {
         ctx.slots.inject('sidebar.panellist.actions', () =>
           ctx.slots.register(
             {
               name: 'sidebar.panellist.actions',
-              id: 'dsh-polish-pin-all',
+              id: 'dsh-polish-panellist-actions',
               order: 90,
               locale: NS,
             },
-            PinAllPanels,
+            PanellistActions,
           ),
         )
       } catch (error) {
@@ -1506,10 +1895,13 @@ select option:checked {
       } catch (error) {
         console.error('[dsh-polish] карточка недоступна:', error)
       }
+
+      // Любой наш плагин — строка в левой панели: закрепить можно любой.
+      applyShortcutPanels(ctx)
     }
 
     exports.apply = apply
-    exports.inject = ['slots', 'locale']
+    exports.inject = ['slots', 'locale', 'layout']
     exports.NS = NS
     return module.exports
   },

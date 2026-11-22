@@ -245,11 +245,15 @@ bodyElement.appendChild(pageRoot)
 
 const registrations = []
 const effects = []
+const selections = []
 let boundNs = ''
 let dict = {}
 let registeredLocales = {}
 const ctx = {
   effect: (fn) => { effects.push(fn) },
+  layout: {
+    selectPanel: (id) => { selections.push(id) },
+  },
   locale: {
     bind: (ns) => { boundNs = ns; return (key) => dict[key] ?? key },
     register: (ns, bundles) => {
@@ -274,42 +278,164 @@ const sectionRegistration = registrations.find((item) => item.options.name === '
 assert.ok(sectionRegistration !== undefined, 'секция страницы плагина зарегистрирована')
 assert.equal(typeof registrations[0].component, 'function')
 
-/* --- Меню «Ещё»: кнопка «Закрепить все панели (N)» ----------------------- */
+/* --- Меню «Ещё»: список откреплённых панелей и «Закрепить все панели (N)» --- */
 
 const panelActionsRegistration = registrations.find((item) => item.options.name === 'sidebar.panellist.actions')
 assert.ok(panelActionsRegistration !== undefined, 'слот sidebar.panellist.actions зарегистрирован')
-assert.equal(panelActionsRegistration.options.id, 'dsh-polish-pin-all')
+assert.equal(panelActionsRegistration.options.id, 'dsh-polish-panellist-actions')
 assert.equal(typeof panelActionsRegistration.component, 'function')
 assert.equal(
   panelActionsRegistration.component({ entries: [], onOpen() {}, onPinnedChange() {}, onDismiss() {} }),
   null,
-  'без панелей кнопки нет',
+  'без панелей блока нет',
 )
 const pinnedCalls = []
 let dismissCalls = 0
-const pinAllTree = panelActionsRegistration.component({
+const menuTree = panelActionsRegistration.component({
   entries: [
-    { id: 'plugins', label: 'Плагины', pinned: false },
-    { id: 'cards', label: 'Карточки', pinned: false },
+    { id: 'plugin-cards', label: 'Карточки', pinned: false },
+    { id: 'plugin-compact', label: 'Сжатие диалога', pinned: true },
+    { id: 'plugin-review', label: 'Ревью изменений', pinned: false },
   ],
   onOpen() {},
   onPinnedChange: (id, value) => { pinnedCalls.push([id, value]) },
   onDismiss: () => { dismissCalls += 1 },
 })
-assert.equal(pinAllTree.type, 'div', 'кнопка в обёртке')
-assert.equal(pinAllTree.props['data-dsh-polish-panellist-actions'], 'pin-all')
-const pinAllButton = pinAllTree.children[0]
+assert.equal(menuTree.type, 'div', 'список в обёртке')
+assert.equal(menuTree.props['data-dsh-polish-panellist-actions'], 'list')
+assert.equal(menuTree.children[0].props['data-dsh-polish-panellist-title'], 'unpinned', 'заголовок списка')
+assert.match(JSON.stringify(menuTree.children[0]), /Откреплённые панели/, 'подпись «Откреплённые панели»')
+
+const unpinnedRows = menuTree.children.filter((node) => node?.props?.['data-dsh-polish-pinnable'] !== undefined)
+assert.deepEqual(
+  unpinnedRows.map((row) => row.props['data-dsh-polish-pinnable']),
+  ['plugin-cards', 'plugin-review'],
+  'в списке только откреплённые панели',
+)
+const firstPin = unpinnedRows[0].children[1]
+assert.equal(firstPin.type, 'button')
+assert.equal(firstPin.props['data-dsh-polish-button'], 'pin', 'кнопка строки — pin')
+assert.equal(firstPin.props.style.height, 32, 'кнопка строки 32 px')
+assert.equal(firstPin.props.style.borderRadius, 10, 'радиус 10')
+assert.equal(firstPin.props.style.whiteSpace, 'nowrap', 'ширина по тексту')
+assert.match(JSON.stringify(firstPin.children), /📌/, 'иконка булавки')
+assert.match(JSON.stringify(firstPin.children), /Закрепить/, 'подпись «Закрепить»')
+assert.match(String(firstPin.props.title), /Закрепить «Карточки»/, 'подсказка с названием панели')
+firstPin.props.onClick()
+assert.deepEqual(pinnedCalls, [['plugin-cards', true]], 'onPinnedChange(id, true)')
+assert.equal(dismissCalls, 1, 'меню закрывается после закрепления')
+
+const pinAllButton = menuTree.children.find((node) => node?.props?.['data-dsh-polish-pin-all'] === 'button')
+assert.ok(pinAllButton !== undefined, 'кнопка «Закрепить все панели» есть')
 assert.equal(pinAllButton.type, 'button')
 assert.equal(pinAllButton.props['data-dsh-polish-button'], 'primary', 'primary-кнопка')
 assert.equal(pinAllButton.props.style.height, 36, 'высота 36')
 assert.equal(pinAllButton.props.style.borderRadius, 10, 'радиус 10')
 assert.equal(pinAllButton.props.style.padding, '0 14px', 'padding 0 14')
 assert.equal(pinAllButton.props.style.whiteSpace, 'nowrap', 'ширина по тексту')
-assert.match(JSON.stringify(pinAllButton.children), /Закрепить все панели \(2\)/, 'подпись с количеством')
+assert.match(JSON.stringify(pinAllButton.children), /Закрепить все панели \(2\)/, 'только откреплённые в счётчике')
 assert.doesNotMatch(JSON.stringify(pinAllButton.props.style), /#fff/, 'нет белого текста')
+pinnedCalls.length = 0
+dismissCalls = 0
 pinAllButton.props.onClick()
-assert.deepEqual(pinnedCalls, [['plugins', true], ['cards', true]], 'закрепляет каждую панель')
-assert.equal(dismissCalls, 1, 'меню закрывается')
+assert.deepEqual(
+  pinnedCalls,
+  [['plugin-cards', true], ['plugin-review', true]],
+  'закрепляет каждую откреплённую панель',
+)
+assert.equal(dismissCalls, 1, 'меню закрывается один раз')
+
+const allPinnedTree = panelActionsRegistration.component({
+  entries: [{ id: 'plugin-cards', label: 'Карточки', pinned: true }],
+  onPinnedChange() { throw new Error('у всех панелей pinned=true') },
+  onDismiss() {},
+})
+assert.ok(allPinnedTree !== null, 'подсказка вместо пустого меню')
+assert.match(JSON.stringify(allPinnedTree), /Все панели уже в левом меню/, 'все панели на месте')
+assert.equal(
+  allPinnedTree.children.some((node) => node?.props?.['data-dsh-polish-pin-all'] !== undefined),
+  false,
+  'кнопки «Закрепить все» нет, когда закреплять нечего',
+)
+
+/* --- 11 плагинов-панелей: main + sidebar.panellist с одинаковыми ключами --- */
+
+const SHORTCUT_IDS = [
+  'cards', 'compact', 'review', 'notify', 'team', 'vault', 'pyrus', 'inbox', 'polish', 'whale', 'browser',
+]
+const SHORTCUT_EMOJI = {
+  cards: '🧩',
+  compact: '🗜️',
+  review: '📝',
+  notify: '🔔',
+  team: '👥',
+  vault: '🔑',
+  pyrus: '📋',
+  inbox: '📥',
+  polish: '🎨',
+  whale: '🐳',
+  browser: '🌐',
+}
+const expectedIds = SHORTCUT_IDS.map((id) => `plugin-${id}`)
+const mainRegs = registrations.filter((item) => item.options.name === 'main')
+const sidebarRegs = registrations.filter((item) => item.options.name === 'sidebar.panellist')
+assert.equal(mainRegs.length, 11, '11 main-панелей')
+assert.equal(sidebarRegs.length, 11, '11 строк левой панели')
+assert.deepEqual(mainRegs.map((item) => item.options.key), expectedIds, 'ключи main-панелей plugin-<id>')
+assert.deepEqual(sidebarRegs.map((item) => item.options.id), expectedIds, 'id строк plugin-<id>')
+assert.deepEqual(
+  mainRegs.map((item) => item.options.key),
+  sidebarRegs.map((item) => item.options.id),
+  'ключ main-панели и id строки совпадают',
+)
+assert.equal(new Set(expectedIds).size, 11, 'id уникальны')
+for (const [index, registration] of sidebarRegs.entries()) {
+  assert.equal(typeof registration.options.label, 'function', 'подпись строки — функция')
+  assert.equal(registration.options.locale, 'dshPolish', 'строка в словаре плагина')
+  assert.equal(registration.options.order, 20 + index, 'порядок строк 20+i')
+  assert.equal(typeof registration.component, 'function', 'иконка строки — компонент')
+  const icon = registration.component({ size: 16, active: false })
+  assert.equal(icon.type, 'span', 'иконка — span с эмодзи')
+  assert.equal(icon.props['data-dsh-polish-icon'], SHORTCUT_IDS[index])
+  assert.equal(icon.props.style.width, 16)
+  assert.equal(icon.children[0], SHORTCUT_EMOJI[SHORTCUT_IDS[index]], 'эмодзи плагина')
+  assert.equal(registration.options.label(), dict[`shortcut.${SHORTCUT_IDS[index]}.title`], 'подпись из словаря')
+}
+
+/* --- ShortcutPage: шапка, карточка, кнопка «Открыть настройки плагина» ---- */
+
+for (const [index, id] of SHORTCUT_IDS.entries()) {
+  const pageTreeOne = renderTree(mainRegs[index].component({}))
+  assert.equal(pageTreeOne.props?.['data-dsh-polish-page'], 'page', `${id}: страница помечена data-атрибутом`)
+  assert.equal(pageTreeOne.props?.['data-dsh-polish-shortcut'], id, `${id}: id плагина в разметке`)
+  assert.equal(pageTreeOne.props?.style?.maxWidth, 960, `${id}: центрированная страница 960`)
+  assert.equal(pageTreeOne.props?.style?.margin, '0 auto', `${id}: по центру`)
+  const pageJsonOne = JSON.stringify(pageTreeOne)
+  assert.match(pageJsonOne, new RegExp(SHORTCUT_EMOJI[id].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `${id}: эмодзи в шапке`)
+  assert.match(pageJsonOne, new RegExp(dict[`shortcut.${id}.title`]), `${id}: название плагина`)
+  assert.match(pageJsonOne, /О плагине/, `${id}: карточка описания`)
+  assert.match(pageJsonOne, /меню «Ещё»/, `${id}: подсказка про меню «Ещё»`)
+}
+
+const shortcutTree = renderTree(mainRegs[0].component({}))
+const shortcutHeaders = collect(shortcutTree, (node) => node.props?.['data-dsh-polish-header'] === 'header')
+assert.equal(shortcutHeaders.length, 1, 'шапка одна')
+const shortcutChips = collect(shortcutTree, (node) => node.props?.['data-dsh-polish-chip'] === 'status')
+assert.equal(shortcutChips.length, 1, 'статус-чип в шапке')
+assert.match(JSON.stringify(shortcutChips[0]), /В левом меню/, 'чип «В левом меню»')
+const shortcutCards = collect(shortcutTree, (node) => node.props?.['data-dsh-polish-card'] === 'shortcut')
+assert.equal(shortcutCards.length, 1, 'карточка плагина')
+assert.match(JSON.stringify(shortcutCards[0]), /Ответы-карточки в чате/, 'описание плагина в карточке')
+const openSettings = collect(shortcutTree, (node) => node.props?.['data-dsh-polish-open-settings'] === 'cards')[0]
+assert.ok(openSettings !== undefined, 'кнопка «Открыть настройки плагина»')
+assert.equal(openSettings.type, 'button')
+assert.equal(openSettings.props.style.height, 36, 'primary 36 px')
+assert.equal(openSettings.props.style.padding, '0 14px')
+assert.match(JSON.stringify(openSettings.children), /Открыть настройки плагина/)
+assert.doesNotMatch(JSON.stringify(openSettings.props.style), /#fff/, 'нет белого текста')
+selections.length = 0
+openSettings.props.onClick()
+assert.deepEqual(selections, ['plugins'], 'selectPanel("plugins") из main-панели')
 
 const cleanups = effects.map((fn) => fn())
 
@@ -319,6 +445,7 @@ const css = styleElement.textContent
 assert.match(css, /button:hover/)
 assert.match(css, /focus-visible/)
 assert.match(css, /color-scheme: inherit/)
+assert.match(css, /\[data-dsh-polish-button='pin'\]:hover/, 'подсветка кнопок «Закрепить» в меню «Ещё»')
 assert.match(css, /\.dsh-polish-desc-bar/)
 assert.match(css, /\.dsh-polish-desc-bar\.is-open \.dsh-polish-desc-chevron/)
 assert.match(css, /rotate\(180deg\)/)
@@ -549,12 +676,29 @@ assert.equal(sectionRegistration.component({ subject: { kind: 'bundle', pkg: { n
 const ruBundle = dict
 const enBundle = registeredLocales.en
 assert.deepEqual(Object.keys(ruBundle).sort(), Object.keys(enBundle).sort(), 'набор ключей ru и en совпадает')
-for (const key of ['reload', 'healthTitle', 'journalTitle', 'updatesTitle', 'check', 'fix', 'checking', 'panelsTitle', 'panelsHint', 'panelsPinAll', 'panelsPinTitle']) {
+for (const key of [
+  'reload', 'healthTitle', 'journalTitle', 'updatesTitle', 'check', 'fix', 'checking',
+  'panelsTitle', 'panelsHint', 'panelsPinAll', 'panelsPinTitle',
+  'panelsUnpinnedTitle', 'panelsUnpinnedHint', 'panelsPinOne', 'panelsPinOneTitle', 'panelsAllPinned',
+  'shortcutHeading', 'shortcutChip', 'shortcutAbout', 'shortcutHint', 'shortcutSettings',
+  'shortcutSettingsFailed', 'shortcutSettingsHint',
+]) {
   assert.equal(typeof enBundle[key], 'string', `en: ключ ${key}`)
   assert.equal(typeof ruBundle[key], 'string', `ru: ключ ${key}`)
 }
+for (const id of SHORTCUT_IDS) {
+  assert.equal(typeof ruBundle[`shortcut.${id}.title`], 'string', `ru: название ${id}`)
+  assert.equal(typeof ruBundle[`shortcut.${id}.desc`], 'string', `ru: описание ${id}`)
+  assert.equal(typeof enBundle[`shortcut.${id}.title`], 'string', `en: название ${id}`)
+  assert.equal(typeof enBundle[`shortcut.${id}.desc`], 'string', `en: описание ${id}`)
+}
 assert.match(ruBundle.panelsHint, /меню «Ещё»/, 'ru-подсказка упоминает меню «Ещё»')
+assert.match(ruBundle.panelsHint, /любую панель/, 'ru-подсказка: закрепить можно любую панель')
+assert.match(enBundle.panelsHint, /Any panel/, 'en-подсказка: закрепить можно любую панель')
 assert.match(ruBundle.panelsPinAll, /\{count\}/, 'ru-кнопка подставляет количество')
+assert.match(ruBundle.shortcutHint, /кнопкой-булавкой/, 'ru-подсказка про булавку')
+assert.match(ruBundle.shortcutHint, /меню «Ещё»/, 'ru-подсказка про меню «Ещё»')
+assert.match(ruBundle.panelsPinOneTitle, /\{name\}/, 'подсказка булавки подставляет название')
 
 console.log('polish smoke: OK')
 console.log('  стили:', css.split('\n').length, 'строк | карточка:', inner.children.length, 'элементов')
@@ -562,4 +706,4 @@ console.log('  описание:', 'свёрнуто, шеврон, localStorage
 console.log('  документ:', 'скрыт data-detail-document, без дублей, restore очищает разметку')
 console.log('  страница:', 'maxWidth 960, шапка 🎨, чип, «Обновить», карточек:', cards.length, ', адаптив')
 console.log('  выравнивание:', 'text-align justify + hyphens auto; код, таблицы и списки исключены')
-console.log('  панели:', 'слот sidebar.panellist.actions, «Закрепить все панели (N)», карточка-подсказка')
+console.log('  панели:', '11 main + 11 sidebar.panellist (plugin-<id>), список откреплённых, «Закрепить все панели (N)»')
