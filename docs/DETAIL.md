@@ -408,6 +408,30 @@ label-primary, рамка чипа — brand 35 %. `:focus-within` даёт ту
 | Проверки и обновления | `index.js` | маршруты `/api/dsh-polish/updates`, `/health`, `/fix`, `/log`, `/update-all`; CLI-обновление |
 | Инструмент агента | `index.js` | `app_reload` — перезагрузка окна приложения |
 
+**Слой наведения и фокуса.** В том же CSS-слое — общие правила для всех
+интерактивных элементов, а не только кнопок: `button`, `select`, `input`,
+`textarea`, `[role="option"]`, `[role="menuitem"]`, `[role="tab"]`, `[role="button"]`,
+`a[href]`, `label:has(> input[type="checkbox"])`,
+`label:has(> input[type="radio"])`, `[class*="switch"]`, кликабельные строки и
+карточки (`[class*="row"]`/`[class*="item"]`/`[class*="card"]` с
+`:is(button, a[href], [role="button"], [tabindex])`, а также наши
+`[data-dsh-polish-row]`/`[data-dsh-polish-panel-row]`). При наведении —
+мягкий фон `color-mix(brand 7%, transparent)` (или
+`--dsw-alias-interactive-bg-hover`), у полей и `select` — рамка брендом 45 %, у
+чекбоксов/радио/переключателей — `accent-color` и рамка, у кликабельных карточек —
+ещё и лёгкая тень; у `[role="tab"][aria-selected="true"]` — акцентная заливка
+10 % и цвет бренда (при наведении — 14 %). Фокус с клавиатуры (`:focus-visible`)
+получает обводку
+`2px var(--dsw-alias-brand-primary)` с `outline-offset: 2px`; радиус не задаётся,
+поэтому `outline` повторяет `border-radius` элемента. Переход —
+`background-color/border-color/color/box-shadow 120ms ease`. Все цвета — токены
+темы, поэтому правила работают в светлой и тёмной схеме. Размеры, отступы, радиусы
+и шрифты не переопределяются, наши кнопки (`[data-dsh-polish-button]`) из общего
+hover исключены — у них своя система. Правила с нулевой или минимальной
+специфичностью (`:where`), поэтому оформление плагина-хозяина и чужих плагинов
+остаётся главнее. Исключения: `disabled`, `aria-disabled="true"` и содержимое
+`pre`/`code` — у них подсветка снимается.
+
 **Маршруты** (все `POST`, ответ JSON):
 
 | Маршрут | Назначение |
@@ -681,3 +705,12 @@ visible+pinned без записи ключа, выключение/включе
 строке переключает панель, клик по флажку не переключает её дважды, hover-фон и
 переход 120 ms в CSS, `:focus-within` для клавиатуры, перенос чипа на узком
 экране.
+
+## Прокрутка страниц
+
+Оформление интерфейса: корень `[data-dsh-polish-page]` (main-панель и секция `plugins.detail.section`) прокручивается по вертикали, если контент выше окна. Корень не имеет фиксированной высоты в px:
+`box-sizing:border-box; width:100%; min-height:0; max-height:100%; overflow-y:auto; overscroll-behavior:contain; padding-bottom` (+ `flex:1 1 auto` для flex-родителя), вложенные блоки с `max-height` прокручиваются внутри.
+
+Проверено headless на высотах окна 700/800 px и ширинах 1280/1024/768/480 px: страница докручивается до последнего элемента (`bottomReachable`), горизонтальной прокрутки страницы нет.
+
+Тест: `node --test test/scroll.test.mjs`.

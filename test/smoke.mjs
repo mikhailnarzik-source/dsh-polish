@@ -687,9 +687,143 @@ assert.match(css, /font-size: 17px/, 'эмодзи 17 px в раскрытой �
 assert.match(css, /\[class\*="collapsed"\] nav button\[data-dsh-panel-emoji\]/, 'правило для свёрнутой панели')
 assert.match(css, /font-size: 18px/, 'эмодзи 18 px в свёрнутой панели')
 
+/* --- Наведение и фокус для всех интерактивных элементов ------------------ */
+
+const HOVER_START = '/* --- Наведение и фокус: все интерактивные элементы'
+const HOVER_END = '/* --- Конец слоя hover/focus'
+const hoverStart = css.indexOf(HOVER_START)
+assert.ok(hoverStart >= 0, 'слой hover/focus добавлен в CSS')
+const hoverEnd = css.indexOf(HOVER_END, hoverStart)
+assert.ok(hoverEnd > hoverStart, 'у слоя hover/focus есть закрывающий маркер')
+const hoverCss = css.slice(hoverStart, hoverEnd)
+
+// Правила разбираем по блокам: так тест не зависит от переносов строк.
+const hoverRules = hoverCss.split('}').map((part) => `${part}}`)
+const ruleOf = (predicate, label) => {
+  const rule = hoverRules.find(predicate)
+  assert.ok(rule !== undefined, label)
+  return rule
+}
+const selectorOf = (rule) => rule.slice(0, rule.indexOf('{'))
+
+// Hover: мягкий фон бренда у кнопок, списков, вкладок, ссылок и строк.
+const hoverBackground = ruleOf(
+  (rule) => rule.includes(':hover') && rule.includes('background-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 7%, transparent)'),
+  'общее правило hover с мягким фоном бренда',
+)
+const hoverBackgroundSelector = selectorOf(hoverBackground)
+for (const marker of [
+  'button:not(:disabled)',
+  'select:not(:disabled)',
+  'a[href]',
+  "[role='option']",
+  "[role='menuitem']",
+  "[role='tab']",
+  "[role='button']",
+  "[class*='switch']",
+  'label:has(',
+  "[class*='row']",
+  "[class*='item']",
+  "[class*='card']",
+  '[data-dsh-polish-row]',
+  '[data-dsh-polish-panel-row]',
+]) {
+  assert.ok(hoverBackgroundSelector.includes(marker), `hover: есть ${marker}`)
+}
+assert.ok(
+  hoverBackgroundSelector.includes(':not([data-dsh-polish-button])'),
+  'наши кнопки не перекрываются общим hover',
+)
+
+// Поля, select и textarea: тонкая рамка брендом 45 %.
+const fieldHover = ruleOf(
+  (rule) => rule.includes(':hover') && rule.includes('border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 45%, transparent)'),
+  'hover полей: рамка брендом 45%',
+)
+const fieldSelector = selectorOf(fieldHover)
+for (const marker of [
+  "input:not(:disabled):not([type='checkbox']):not([type='radio'])",
+  'textarea:not(:disabled)',
+  'select:not(:disabled)',
+]) {
+  assert.ok(fieldSelector.includes(marker), `hover поля: есть ${marker}`)
+}
+
+// Чекбоксы, радио и переключатели: акцент и усиленная рамка.
+const checkHover = ruleOf(
+  (rule) => rule.includes(':hover') && rule.includes('accent-color: var(--dsw-alias-brand-primary)'),
+  'hover чекбоксов и переключателей: accent-color',
+)
+const checkSelector = selectorOf(checkHover)
+assert.ok(checkSelector.includes("input[type='checkbox']"), 'hover: чекбокс')
+assert.ok(checkSelector.includes("input[type='radio']"), 'hover: радио')
+assert.ok(checkSelector.includes("[class*='switch']"), 'hover: переключатель')
+assert.match(checkHover, /border-color: color-mix/, 'у переключателей усиливается рамка')
+
+// Вкладки: выбранная получает акцент бренда.
+const selectedTab = hoverRules.find(
+  (rule) => rule.includes("[role='tab'][aria-selected='true']") && !rule.includes(':hover'),
+)
+assert.ok(selectedTab !== undefined, 'акцент выбранной вкладки (aria-selected)')
+assert.match(selectedTab, /color: var\(--dsw-alias-brand-primary\)/, 'выбранная вкладка — цвет бренда')
+
+// Кликабельные карточки: лёгкая тень, размеры не меняются.
+assert.match(hoverCss, /box-shadow: 0 2px 10px/, 'hover карточки — мягкая тень')
+
+// Переход 120 мс.
+assert.match(
+  hoverCss,
+  /transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease/,
+  'transition 120 мс у интерактивных элементов',
+)
+
+// Focus-visible: обводка 2 px цветом бренда и отступ 2 px.
+assert.match(css, /outline: 2px solid var\(--dsw-alias-brand-primary\)/, 'фокус — обводка 2 px цветом бренда')
+assert.match(css, /outline-offset: 2px/, 'фокус — отступ обводки 2 px')
+assert.match(
+  css,
+  /button:focus-visible,\s*\[role='button'\]:focus-visible,\s*a:focus-visible,\s*input:focus-visible,\s*select:focus-visible,\s*textarea:focus-visible\s*\{/,
+  'фокус для кнопок, ссылок и полей',
+)
+const focusExtra = ruleOf(
+  (rule) => rule.includes(':focus-visible') && rule.includes("[role='option']") && rule.includes('outline: 2px solid var(--dsw-alias-brand-primary)'),
+  'focus-visible для списков, вкладок, строк и карточек',
+)
+const focusExtraSelector = selectorOf(focusExtra)
+for (const marker of [
+  "[role='menuitem']",
+  "[role='tab']",
+  'label:has(',
+  "[class*='switch']",
+  '[data-dsh-polish-row]',
+  "[class*='row']",
+  "[class*='card']",
+]) {
+  assert.ok(focusExtraSelector.includes(marker), `focus: есть ${marker}`)
+}
+assert.doesNotMatch(focusExtra, /border-radius:/, 'радиус при фокусе не переопределяется')
+
+// Исключения: disabled/aria-disabled и код pre/code.
+assert.match(hoverCss, /:is\(:disabled, \[aria-disabled='true'\]\) \{/, 'disabled не получает подсветку')
+assert.match(hoverCss, /:where\(pre, code\) :is\(/, 'содержимое pre/code исключено')
+assert.match(hoverCss, /background-color: transparent/, 'исключения снимают фон')
+assert.match(hoverCss, /outline: none/, 'исключения снимают обводку')
+assert.match(
+  hoverCss,
+  /:where\(pre, code\) :is\([^)]*\):focus-visible \{/,
+  'у кода фокус без обводки',
+)
+
+// Размеры, радиусы, отступы и шрифты не трогаем: слой только про цвет.
+assert.doesNotMatch(
+  hoverCss,
+  /(^|[;{\s])(border-radius|height|min-height|max-height|width|min-width|max-width|padding|margin|font-size|transform)\s*:/,
+  'слой не меняет размеры, радиусы, отступы и шрифты',
+)
+
 /* --- Глобальное выравнивание длинных абзацев ----------------------------- */
 
-const justifyMatch = css.match(/:is\([^{}]*\):not\([^{}]*\)\s*\{[^}]*\}/)
+const justifyMatch = css.match(/:is\(\s*\[class\*="message"\] p[\s\S]*?\):not\([^{}]*\)\s*\{[^}]*\}/)
 assert.ok(justifyMatch !== null, 'правило выравнивания по ширине добавлено')
 const justifyRule = justifyMatch[0]
 const justifySelector = justifyRule.slice(0, justifyRule.indexOf('{'))
@@ -1826,6 +1960,10 @@ console.log('  описание:', 'свёрнуто, шеврон, localStorage
 console.log('  документ:', 'скрыт data-detail-document, без дублей, restore очищает разметку')
 console.log('  страница:', 'maxWidth 960, шапка 🎨, чип, «Обновить», карточек:', cards.length, ', адаптив')
 console.log('  выравнивание:', 'text-align justify + hyphens auto; код, таблицы и списки исключены')
+console.log(
+  '  hover/focus:',
+  'кнопки, поля, списки, вкладки, ссылки, чекбоксы, переключатели, строки и карточки; transition 120ms; disabled и pre/code исключены',
+)
 console.log(
   '  панели:',
   'список из ctx.slots.entriesOfSlot(sidebar.panellist), порядок по order, новые id с переключателем и дефолтом visible+pinned без записи ключа; своя main plugin-polish без блоков плагин-менеджера',

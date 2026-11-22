@@ -315,7 +315,7 @@ a:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 2px solid rgba(84, 126, 214, 0.75);
+  outline: 2px solid var(--dsw-alias-brand-primary);
   outline-offset: 2px;
 }
 input,
@@ -337,6 +337,146 @@ select option:checked {
   scrollbar-color: rgba(128, 128, 128, 0.45) transparent;
 }
 
+/* --- Наведение и фокус: все интерактивные элементы -------------------- */
+/* Общий слой поверх кнопок, полей, списков, вкладок, строк и кликабельных
+   карточек: мягкий фон/рамка токенами темы и заметная обводка при фокусе с
+   клавиатуры. Размеры, радиусы, отступы и белый текст не переопределяем —
+   раскладку и наши кнопки это не меняет. Отключённые элементы (disabled,
+   aria-disabled=true) и содержимое pre/code исключены. */
+
+/* Плавность: 120 мс на фон, рамку, текст и тень. Нулевая специфичность —
+   собственный transition плагина всегда главнее. */
+:where(
+  button,
+  select,
+  input,
+  textarea,
+  a[href],
+  [role='button'],
+  [role='option'],
+  [role='menuitem'],
+  [role='tab'],
+  [class*='switch'],
+  label:has(> input[type='checkbox']),
+  label:has(> input[type='radio']),
+  [data-dsh-polish-row],
+  [data-dsh-polish-panel-row],
+  [class*='row']:is(button, a[href], [role='button'], [tabindex]),
+  [class*='item']:is(button, a[href], [role='button'], [tabindex]),
+  [class*='card']:is(button, a[href], [role='button'], [tabindex])
+):where(:not(:disabled):not([aria-disabled='true'])) {
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
+}
+
+/* Кнопки, вкладки, пункты списков, ссылки и кликабельные строки: мягкий фон
+   при наведении. Наши собственные кнопки (data-dsh-polish-button) не трогаем:
+   у них своя система hover из карточки. */
+:where(
+  button:not(:disabled):not([aria-disabled='true']):not([data-dsh-polish-button]),
+  select:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  [role='option']:not([aria-disabled='true']),
+  [role='menuitem']:not([aria-disabled='true']),
+  [role='tab']:not([aria-disabled='true']),
+  a[href]:not([aria-disabled='true']),
+  label:has(> input[type='checkbox']:not(:disabled)),
+  label:has(> input[type='radio']:not(:disabled)),
+  [class*='switch']:not([aria-disabled='true']),
+  [data-dsh-polish-row],
+  [data-dsh-polish-panel-row],
+  [class*='row']:is(button, a[href], [role='button'], [tabindex]):not([aria-disabled='true']),
+  [class*='item']:is(button, a[href], [role='button'], [tabindex]):not([aria-disabled='true']),
+  [class*='card']:is(button, a[href], [role='button'], [tabindex]):not([aria-disabled='true'])
+):not(:is(pre, code) *):hover {
+  background-color: var(--dsw-alias-interactive-bg-hover);
+  background-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 7%, transparent);
+}
+
+/* Поля ввода и выбора: при наведении рамка в цвет бренда — мягко, без толщины
+   и без заливки, чтобы не спорить с оформлением плагинов. */
+:where(
+  input:not(:disabled):not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='hidden']),
+  textarea:not(:disabled),
+  select:not(:disabled)
+):hover {
+  border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 45%, transparent);
+}
+
+/* Чекбоксы, радио и переключатели: акцент и усиление рамки при наведении. */
+:where(
+  input[type='checkbox']:not(:disabled),
+  input[type='radio']:not(:disabled),
+  [class*='switch']:not([aria-disabled='true'])
+):hover {
+  accent-color: var(--dsw-alias-brand-primary);
+  border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 55%, transparent);
+}
+
+/* Вкладки и переключатели вкладок: выбранная вкладка — акцент бренда
+   (в покое 10 %, при наведении чуть заметнее — 14 %). */
+[role='tab'][aria-selected='true']:not([aria-disabled='true']) {
+  color: var(--dsw-alias-brand-primary);
+  background-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 10%, transparent);
+}
+[role='tab'][aria-selected='true']:not([aria-disabled='true']):hover {
+  background-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 14%, transparent);
+}
+
+/* Кликабельные карточки: лёгкая тень при наведении, размеры не меняются. */
+:where(
+  [class*='card']:is(button, a[href], [role='button'], [tabindex]):not([aria-disabled='true']),
+  button:not(:disabled)[class*='card'],
+  a[href][class*='card']
+):hover {
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--dsw-alias-label-primary) 12%, transparent);
+}
+
+/* Фокус с клавиатуры для тех же элементов: обводка 2 px бренда, отступ 2 px,
+   радиус не задаём — outline сам повторяет border-radius элемента. */
+:where(
+  [role='option']:not([aria-disabled='true']),
+  [role='menuitem']:not([aria-disabled='true']),
+  [role='tab']:not([aria-disabled='true']),
+  label:has(> input[type='checkbox']),
+  label:has(> input[type='radio']),
+  [class*='switch'],
+  [data-dsh-polish-row],
+  [data-dsh-polish-panel-row],
+  [class*='row']:is(button, a[href], [role='button'], [tabindex]),
+  [class*='item']:is(button, a[href], [role='button'], [tabindex]),
+  [class*='card']:is(button, a[href], [role='button'], [tabindex])
+):focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 2px;
+}
+
+/* Исключения: disabled / aria-disabled=true и содержимое pre/code не
+   подсвечиваются. Отключённым не назначаем фон (у них он свой), только снимаем
+   анимацию; у кода снимаем и фон, и обводку. */
+:where(
+  button,
+  a[href],
+  [role='button'],
+  [role='option'],
+  [role='menuitem'],
+  [role='tab'],
+  [class*='switch']
+):is(:disabled, [aria-disabled='true']) {
+  transition: none;
+}
+:where(pre, code) :is(button, select, input, textarea, a[href], [role='button'], [role='option'], [role='menuitem'], [role='tab']) {
+  transition: none;
+}
+:where(pre, code) :is(button, a[href], [role='button'], [role='option'], [role='menuitem'], [role='tab']):hover {
+  background-color: transparent;
+  box-shadow: none;
+}
+:where(pre, code) :is(button, select, input, textarea, a[href], [role='button'], [role='option'], [role='menuitem'], [role='tab']):focus-visible {
+  outline: none;
+}
+/* --- Конец слоя hover/focus ------------------------------------------- */
+
+/* Страница плагина: сначала блок управления, затем описание. */
 /* Страница плагина: сначала блок управления, затем описание. */
 [class*="detailMain"] {
   display: flex !important;
@@ -519,6 +659,12 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
         flexDirection: 'column',
         gap: 16,
         color: 'inherit',
+        flex: '1 1 auto',
+        minHeight: 0,
+        maxHeight: '100%',
+        overflowY: 'auto',
+        overflowX: 'hidden',
+        overscrollBehavior: 'contain',
       },
       header: { display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' },
       logo: {
@@ -788,8 +934,15 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
       },
     }
 
+    /** Скролл страницы: корень ограничивает высоту и прокручивается. */
+    const PAGE_SCROLL_CSS =
+      '/* --- Скролл страницы: корень ограничивает высоту и прокручивается --- */' +
+      '[data-dsh-polish-page]{box-sizing:border-box;width:100%;min-width:0;min-height:0;max-height:100%;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin;padding-bottom:40px;flex:1 1 auto}' +
+      '/* --- Конец блока скролла страницы --- */'
+
     /** Адаптив и hover строк списка — то, что не выразить inline-стилями. */
     const PAGE_CSS =
+      PAGE_SCROLL_CSS +
       '[data-dsh-polish-row]{overflow-wrap:anywhere}' +
       '[data-dsh-polish-row]:hover{background:color-mix(in srgb, var(--dsw-alias-label-primary) 5%, transparent)}' +
       // Строка панели в карточке «Панели в левом меню»: мягкий фон при
