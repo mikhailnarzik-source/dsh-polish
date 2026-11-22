@@ -722,6 +722,21 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
         padding: '2px 0',
         minWidth: 0,
       },
+      // Строка панели в карточке настроек: кликабельна целиком, поэтому
+      // получает поля, радиус и курсор-указатель. Фон при наведении и фокусе
+      // внутри — в PAGE_CSS (`data-dsh-polish-panel-row`).
+      panelToggleRow: {
+        boxSizing: 'border-box',
+        display: 'flex',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        flexShrink: 0,
+        gap: 8,
+        padding: '8px 10px',
+        borderRadius: 10,
+        minWidth: 0,
+        cursor: 'pointer',
+      },
       panellistLabel: {
         flex: '1 1 120px',
         minWidth: 0,
@@ -777,6 +792,20 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
     const PAGE_CSS =
       '[data-dsh-polish-row]{overflow-wrap:anywhere}' +
       '[data-dsh-polish-row]:hover{background:color-mix(in srgb, var(--dsw-alias-label-primary) 5%, transparent)}' +
+      // Строка панели в карточке «Панели в левом меню»: мягкий фон при
+      // наведении и фокусе с клавиатуры, лёгкое усиление названия и чипа.
+      '[data-dsh-polish-panel-row]{transition:background-color 120ms ease,border-color 120ms ease}' +
+      '[data-dsh-polish-panel-row]:hover,[data-dsh-polish-panel-row]:focus-within{' +
+      'background:var(--dsw-alias-interactive-bg-hover);' +
+      'background:color-mix(in srgb, var(--dsw-alias-brand-primary) 8%, transparent)}' +
+      '[data-dsh-polish-panel-row] [data-dsh-polish-panel-name]{transition:color 120ms ease,font-weight 120ms ease}' +
+      '[data-dsh-polish-panel-row]:hover [data-dsh-polish-panel-name],' +
+      '[data-dsh-polish-panel-row]:focus-within [data-dsh-polish-panel-name]{' +
+      'font-weight:600;color:var(--dsw-alias-label-primary)}' +
+      '[data-dsh-polish-panel-row] [data-dsh-polish-chip="status"]{transition:border-color 120ms ease}' +
+      '[data-dsh-polish-panel-row]:hover [data-dsh-polish-chip="status"],' +
+      '[data-dsh-polish-panel-row]:focus-within [data-dsh-polish-chip="status"]{' +
+      'border-color:color-mix(in srgb, var(--dsw-alias-brand-primary) 35%, transparent) !important}' +
       '[data-dsh-polish-card]{justify-content:flex-start}' +
       '[data-dsh-polish-card] > *:last-child{margin-top:auto}' +
       '[data-dsh-polish-button="secondary"]:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover) !important}' +
@@ -795,6 +824,8 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
       '[data-dsh-polish-actions]{margin-left:0 !important;width:100%}' +
       '[data-dsh-polish-row]{gap:6px}' +
       '[data-dsh-polish-row] > span{min-width:0 !important}' +
+      '[data-dsh-polish-panel-row]{padding:8px !important;gap:6px !important}' +
+      '[data-dsh-polish-panel-row] [data-dsh-polish-chip="status"]{flex:1 1 100% !important;justify-content:center}' +
       '[data-dsh-polish-button]{max-width:100%}' +
       '}'
 
@@ -2235,6 +2266,20 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
         setState(getPanelState())
       }
       const visibleCount = panels.filter((panel) => state.visible.includes(panel.pluginId)).length
+      /**
+       * Клик по строке переключает панель целиком, но клик по флажку и его
+       * подписи уже обрабатывает сам флажок: строку второй раз не трогаем,
+       * иначе переключение сработало бы дважды.
+       */
+      const switchHandlesClick = (event) => {
+        let node = event?.target ?? null
+        for (let depth = 0; node !== null && node !== undefined && depth < 16; depth += 1) {
+          const tag = String(node.tagName ?? '').toUpperCase()
+          if (tag === 'INPUT' || tag === 'LABEL') return true
+          node = node.parentElement ?? null
+        }
+        return false
+      }
       const actions = chipNode(
         fmt(t('panelsVisibleCount'), { count: visibleCount, total: panels.length }),
         'brand',
@@ -2256,9 +2301,23 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
                 const emoji = panelEmojiFor(panel)
                 return h(
                   'div',
-                  { key: panel.pluginId, style: S.panellistRow, 'data-dsh-polish-panel-row': panel.pluginId },
+                  {
+                    key: panel.pluginId,
+                    style: S.panelToggleRow,
+                    'data-dsh-polish-panel-row': panel.pluginId,
+                    // Вся строка — цель клика: наведение подсвечивает её фон,
+                    // клик в любом месте (кроме самого флажка) переключает панель.
+                    onClick: (event) => {
+                      if (switchHandlesClick(event)) return
+                      toggle(panel.pluginId, !visible)
+                    },
+                  },
                   h('span', { 'aria-hidden': true, style: { flex: 'none', fontSize: 15, lineHeight: 1 } }, emoji),
-                  h('span', { style: S.panellistLabel, title: name }, name),
+                  h(
+                    'span',
+                    { style: S.panellistLabel, title: name, 'data-dsh-polish-panel-name': panel.pluginId },
+                    name,
+                  ),
                   h(
                     'label',
                     { style: S.switchRow },

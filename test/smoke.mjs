@@ -985,6 +985,61 @@ const switchInput = collect(
 )
 assert.equal(switchInput.length, 1, 'переключатель оформления на месте')
 
+/* --- Строка панели: контейнер, наведение и клик по всей строке ------------ */
+
+const cardsRow = settingsPanelRows.find((row) => row.props['data-dsh-polish-panel-row'] === 'cards')
+assert.ok(cardsRow !== undefined, 'строка «Карточки» на странице')
+assert.equal(typeof cardsRow.props.onClick, 'function', 'у строки есть обработчик клика')
+assert.equal(cardsRow.props.style.padding, '8px 10px', 'у строки поля 8×10 px')
+assert.equal(cardsRow.props.style.borderRadius, 10, 'у строки радиус 10 px')
+assert.equal(cardsRow.props.style.cursor, 'pointer', 'курсор-указатель на всей строке')
+assert.equal(cardsRow.props.style.flexWrap, 'wrap', 'строка переносится на узком экране')
+const cardsName = cardsRow.children.find(
+  (node) => node?.props?.['data-dsh-polish-panel-name'] === 'cards',
+)
+assert.ok(cardsName !== undefined, 'название панели помечено data-атрибутом для подсветки')
+assert.equal(cardsName.props.title, 'Карточки', 'подсказка с названием сохранена')
+assert.match(JSON.stringify(cardsRow), /В левом меню/, 'чип строки на месте')
+
+// Клик по строке (не по флажку) переключает панель — как и флажок.
+windowEvents.length = 0
+cardsRow.props.onClick({ target: { tagName: 'SPAN', parentElement: null } })
+let rowClickedStorage = readPanelStorage()
+assert.equal(rowClickedStorage.visible.includes('cards'), false, 'клик по строке выключил панель')
+assert.equal(rowClickedStorage.pinned.includes('cards'), false, 'выключенная панель ушла и из закреплённых')
+assert.equal(panelsEvents().length, 1, 'клик по строке отправил одно событие')
+const afterRowClickPage = settingsPageFrom(registrations)
+const afterRowClickToggles = collect(
+  afterRowClickPage,
+  (node) => node.type === 'input' && node.props?.['data-dsh-polish-panel-toggle'] !== undefined,
+)
+assert.equal(
+  afterRowClickToggles.find((toggle) => toggle.props['data-dsh-polish-panel-toggle'] === 'cards').props.checked,
+  false,
+  'после клика флажок строки снят',
+)
+
+// Клик по флажку и его подписи обрабатывает сам флажок: строку не трогаем,
+// иначе панель переключилась бы дважды.
+const clickRowAgain = collect(
+  afterRowClickPage,
+  (node) => node.props?.['data-dsh-polish-panel-row'] !== undefined,
+).find((row) => row.props['data-dsh-polish-panel-row'] === 'cards')
+const clickGuardEvents = panelsEvents().length
+const guardLabel = new FakeElement('label')
+const guardCaption = new FakeElement('span')
+guardLabel.appendChild(guardCaption)
+clickRowAgain.props.onClick({ target: guardCaption })
+assert.equal(readPanelStorage().visible.includes('cards'), false, 'клик по подписи флажка не переключает строку')
+assert.equal(panelsEvents().length, clickGuardEvents, 'клик по подписи флажка не шлёт событие')
+
+// Возврат к исходному состоянию: все панели видны и закреплены.
+windowEvents.length = 0
+clickRowAgain.props.onClick({ target: { tagName: 'DIV', parentElement: null } })
+assert.equal(readPanelStorage().visible.includes('cards'), true, 'повторный клик по строке вернул панель')
+storage.set(PANEL_VISIBILITY_KEY, JSON.stringify({ visible: SHORTCUT_IDS, pinned: SHORTCUT_IDS }))
+
+
 /* --- Переключатель: visible/pinned, localStorage и событие ---------------- */
 
 const toggleById = new Map(panelToggles.map((node) => [node.props['data-dsh-polish-panel-toggle'], node]))
@@ -1203,6 +1258,55 @@ assert.match(pageCss, /\[data-dsh-polish-page\]\{padding:18px 16px 32px/, 'на 
 assert.match(pageCss, /grid-template-columns:1fr !important/, 'на 900 px сетка карточек в одну колонку')
 assert.match(pageCss, /\[data-dsh-polish-row\] > span\{min-width:0 !important\}/, 'на 640 px колонки строк не имеют фиксированной ширины')
 assert.match(pageCss, /margin-top:auto/, 'футер карточки прижат к низу')
+
+// Строка панели: фон при наведении и фокусе внутри, плавный переход, чип и адаптив.
+assert.match(
+  pageCss,
+  /\[data-dsh-polish-panel-row\]\{transition:background-color 120ms/,
+  'переход фона строки — 120 ms',
+)
+assert.match(pageCss, /\[data-dsh-polish-panel-row\]:hover,/, 'подсветка строки при наведении')
+assert.match(
+  pageCss,
+  /\[data-dsh-polish-panel-row\]:focus-within\{/,
+  'подсветка строки при фокусе внутри (доступность)',
+)
+assert.match(
+  pageCss,
+  /:hover,?\[data-dsh-polish-panel-row\]:focus-within\{background:var\(--dsw-alias-interactive-bg-hover\)/,
+  'фон при наведении — токен interactive-bg-hover',
+)
+assert.match(
+  pageCss,
+  /background:color-mix\(in srgb, var\(--dsw-alias-brand-primary\) 8%, transparent\)/,
+  'фон при наведении — brand 8 %, если токен не задан',
+)
+assert.match(
+  pageCss,
+  /:hover \[data-dsh-polish-panel-name\],\[data-dsh-polish-panel-row\]:focus-within \[data-dsh-polish-panel-name\]\{font-weight:600/,
+  'название усиливается при наведении и фокусе',
+)
+assert.match(
+  pageCss,
+  /\[data-dsh-polish-panel-row\]:hover \[data-dsh-polish-chip="status"\][^}]*border-color:color-mix\(in srgb, var\(--dsw-alias-brand-primary\) 35%/,
+  'рамка чипа усиливается brand 35 %',
+)
+assert.match(
+  pageCss,
+  /\[data-dsh-polish-panel-row\] \[data-dsh-polish-chip="status"\]\{transition:border-color 120ms/,
+  'переход рамки чипа — 120 ms',
+)
+assert.match(
+  pageCss,
+  /\[data-dsh-polish-panel-row\] \[data-dsh-polish-chip="status"\]\{flex:1 1 100% !important;justify-content:center\}/,
+  'на 640 px чип строки переносится на свою строку',
+)
+assert.match(
+  pageCss,
+  /\[data-dsh-polish-panel-row\]\{padding:8px !important;gap:6px !important\}/,
+  'на 640 px поля и отступ строки уменьшаются',
+)
+
 
 // Итерация 2: единые кнопки — мягкая primary-заливка, secondary 32, ширина по тексту.
 const refreshStyle = refreshButtons[0].props.style
