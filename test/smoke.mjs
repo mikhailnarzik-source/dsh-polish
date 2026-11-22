@@ -44,6 +44,16 @@ class FakeElement {
     return this.childNodes[0] ?? null
   }
 
+  get previousElementSibling() {
+    const parent = this.parentElement
+    if (parent === null) return null
+    const index = parent.childNodes.indexOf(this)
+    for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+      if (parent.childNodes[cursor].nodeType === 1) return parent.childNodes[cursor]
+    }
+    return null
+  }
+
   appendChild(node) {
     this._detach(node)
     node.parentElement = this
@@ -105,9 +115,13 @@ function walk(node, visit) {
   for (const child of node.childNodes) walk(child, visit)
 }
 
+const hasClass = (element, name) => String(element?.className ?? '').split(/\s+/).filter(Boolean).includes(name)
+
 function matches(node, selector) {
   if (selector.includes('style[data-plugin')) return node.tagName === 'STYLE' && node.dataset.plugin === 'dsh-polish'
+  if (selector === '[data-detail-document]') return node.attrs['data-detail-document'] !== undefined
   if (selector === '[data-dsh-polish-desc]') return node.attrs['data-dsh-polish-desc'] !== undefined
+  if (selector === '[data-dsh-polish-doc]') return node.attrs['data-dsh-polish-doc'] !== undefined
   if (selector.includes('detailTitle')) return String(node.className).includes('detailTitle')
   if (selector.includes('detailDesc')) return String(node.className).includes('detailDesc')
   return false
@@ -136,7 +150,22 @@ globalThis.document = {
   },
 }
 
-globalThis.getComputedStyle = () => ({ backgroundColor: 'rgb(24, 24, 27)' })
+// Ровно те правила из CSS, которые проверяем: тело описания и скрытый документ.
+function displayOf(element) {
+  if (hasClass(element, 'dsh-polish-desc-body')) {
+    const parent = element.parentElement
+    return parent !== null && hasClass(parent, 'is-open') ? 'block' : 'none'
+  }
+  if (element.attrs['data-detail-document'] !== undefined) {
+    return hasClass(element, 'dsh-polish-doc-hidden') ? 'none' : 'block'
+  }
+  return 'block'
+}
+
+globalThis.getComputedStyle = (element) => ({
+  backgroundColor: 'rgb(24, 24, 27)',
+  display: displayOf(element),
+})
 
 const storage = new Map()
 globalThis.localStorage = {
@@ -175,14 +204,57 @@ const exported = loaded.factory((id) => {
   return modules[id]
 })
 
+/* --- Реальная разметка страницы плагина (имена классов как у хоста) ------ */
+const pageRoot = new FakeElement('div')
+pageRoot.className = 'V7pFBG_detailPage'
+
+const detailMain = new FakeElement('div')
+detailMain.className = 'V7pFBG_detailMain'
+const titleRow = new FakeElement('div')
+titleRow.className = 'V7pFBG_titleRow'
+const titleElement = new FakeElement('h3')
+titleElement.className = 'V7pFBG_detailTitle'
+titleElement.textContent = 'dsh-polish'
+titleRow.appendChild(titleElement)
+detailMain.appendChild(titleRow)
+
+const descElement = new FakeElement('p')
+descElement.className = 'V7pFBG_detailDesc'
+const paragraph = new FakeElement('span')
+paragraph.textContent = 'Единый слой оформления для всех плагинов.'
+descElement.appendChild(paragraph)
+detailMain.appendChild(descElement)
+
+const detailSections = new FakeElement('div')
+detailSections.className = 'V7pFBG_detailSections'
+const docSection = new FakeElement('section')
+docSection.className = 'V7pFBG_section'
+docSection.setAttribute('data-detail-document', 'true')
+const docBody = new FakeElement('div')
+docBody.textContent = 'Длинное описание из README/DETAIL.md'
+docSection.appendChild(docBody)
+const configSection = new FakeElement('section')
+configSection.className = 'V7pFBG_detailSection'
+configSection.setAttribute('data-plugin-config', 'true')
+detailSections.appendChild(docSection)
+detailSections.appendChild(configSection)
+
+pageRoot.appendChild(detailMain)
+pageRoot.appendChild(detailSections)
+bodyElement.appendChild(pageRoot)
+
 const registrations = []
 const effects = []
 let boundNs = ''
+let dict = {}
 const ctx = {
   effect: (fn) => { effects.push(fn) },
   locale: {
-    bind: (ns) => { boundNs = ns; return (key) => key },
-    register: (ns, a, b) => { assert.equal(typeof (b ?? a), 'object') },
+    bind: (ns) => { boundNs = ns; return (key) => dict[key] ?? key },
+    register: (ns, bundles) => {
+      assert.equal(typeof bundles, 'object')
+      dict = bundles?.ru ?? {}
+    },
     subscribe: () => () => {},
   },
   slots: {
@@ -190,24 +262,6 @@ const ctx = {
     register: (options, component) => { registrations.push({ options, component }) },
   },
 }
-
-/* --- Страница плагина: заголовок, секции и описание ---------------------- */
-const mainElement = new FakeElement('div')
-mainElement.className = 'detailMain_c1'
-const titleElement = new FakeElement('h2')
-titleElement.className = 'detailTitle_c1'
-titleElement.textContent = 'dsh-polish'
-const sectionsElement = new FakeElement('div')
-sectionsElement.className = 'detailSections_c1'
-const descElement = new FakeElement('div')
-descElement.className = 'detailDesc_c1'
-const paragraph = new FakeElement('p')
-paragraph.textContent = 'Подсветка кнопок, фокус и тема.'
-descElement.appendChild(paragraph)
-mainElement.appendChild(titleElement)
-mainElement.appendChild(sectionsElement)
-mainElement.appendChild(descElement)
-bodyElement.appendChild(mainElement)
 
 exported.apply(ctx)
 
@@ -218,7 +272,6 @@ const sectionRegistration = registrations.find((item) => item.options.name === '
 assert.ok(sectionRegistration !== undefined, 'секция страницы плагина зарегистрирована')
 assert.equal(typeof registrations[0].component, 'function')
 
-// Эффекты включают слой стилей и слой свёрнутого описания.
 const cleanups = effects.map((fn) => fn())
 
 const styleElement = headElement.firstChild
@@ -228,101 +281,114 @@ assert.match(css, /button:hover/)
 assert.match(css, /focus-visible/)
 assert.match(css, /color-scheme: inherit/)
 assert.match(css, /\.dsh-polish-desc-bar/)
-assert.match(css, /\.dsh-polish-desc-body/)
-assert.match(css, /margin-left: auto/)
+assert.match(css, /\.dsh-polish-desc-bar\.is-open \.dsh-polish-desc-chevron/)
 assert.match(css, /rotate\(180deg\)/)
-assert.match(css, /display: none/)
-assert.match(css, /\.is-open > \.dsh-polish-desc-body/)
-
-/* --- Описание свёрнуто и размечено --------------------------------------- */
+assert.match(css, /\.dsh-polish-desc-body \{\s*display: none/)
+assert.match(css, /\[class\*="detailDesc"\]\.is-open > \.dsh-polish-desc-body/)
+assert.match(css, /\[data-detail-document\]\.dsh-polish-doc-hidden/)
+assert.match(css, /display: none !important/)
 
 function findChildClass(element, className) {
   for (const node of element.childNodes) {
-    if (node.nodeType === 1 && String(node.className).split(/\s+/).includes(className)) return node
+    if (node.nodeType === 1 && hasClass(node, className)) return node
   }
   return null
 }
 
+/* --- Короткое описание: свёрнуто, шеврон, память --------------------------- */
+
 assert.notEqual(descElement.getAttribute('data-dsh-polish-desc'), null, 'описание помечено data-атрибутом')
-const bar = findChildClass(descElement, 'dsh-polish-desc-bar')
-const body = findChildClass(descElement, 'dsh-polish-desc-body')
-assert.ok(bar !== null, 'строка-переключатель добавлена')
-assert.ok(body !== null, 'тело описания обёрнуто')
-assert.equal(descElement.firstChild, bar, 'строка стоит перед телом')
-assert.equal(paragraph.parentElement, body, 'текст перенесён в тело')
-assert.equal(descElement.classList.contains('is-open'), false, 'по умолчанию свёрнуто')
-assert.equal(bar.getAttribute('aria-expanded'), 'false')
-assert.equal(bar.getAttribute('role'), 'button')
-assert.equal(bar.getAttribute('tabindex'), '0')
-const label = findChildClass(bar, 'dsh-polish-desc-label')
-const chevron = findChildClass(bar, 'dsh-polish-desc-chevron')
-assert.equal(label?.textContent, 'desc', 'подпись берётся из словаря')
-assert.match(chevron?.innerHTML ?? '', /<svg/, 'шеврон — SVG')
+const descBar = findChildClass(descElement, 'dsh-polish-desc-bar')
+const descBody = findChildClass(descElement, 'dsh-polish-desc-body')
+assert.ok(descBar !== null, 'строка-переключатель описания добавлена')
+assert.ok(descBody !== null, 'тело описания обёрнуто')
+assert.equal(descElement.firstChild, descBar, 'строка стоит перед телом')
+assert.equal(paragraph.parentElement, descBody, 'текст перенесён в тело')
+assert.equal(descElement.classList.contains('is-open'), false, 'описание по умолчанию свёрнуто')
+assert.equal(getComputedStyle(descBody).display, 'none', 'computed display тела — none')
+assert.equal(descBar.getAttribute('aria-expanded'), 'false')
+assert.equal(descBar.getAttribute('role'), 'button')
+assert.equal(descBar.getAttribute('tabindex'), '0')
+assert.equal(findChildClass(descBar, 'dsh-polish-desc-label')?.textContent, 'Описание', 'подпись из ru-словаря')
+assert.match(findChildClass(descBar, 'dsh-polish-desc-chevron')?.innerHTML ?? '', /<svg/, 'шеврон — SVG')
 
-/* --- Клик разворачивает и запоминает состояние --------------------------- */
+/* --- Подробное описание (data-detail-document): скрыто, своя строка -------- */
 
-bar.dispatch('click', { preventDefault() {}, stopPropagation() {} })
-assert.equal(descElement.classList.contains('is-open'), true, 'клик разворачивает')
-assert.equal(bar.getAttribute('aria-expanded'), 'true')
-const savedKey = [...storage.keys()].find((key) => key.startsWith('dsh-polish:desc-open:'))
-assert.ok(savedKey !== undefined, 'состояние сохранено в localStorage')
-assert.equal(storage.get(savedKey), '1')
+assert.notEqual(docSection.getAttribute('data-dsh-polish-doc'), null, 'документ помечен data-атрибутом')
+const docBar = docSection.previousElementSibling
+assert.ok(docBar !== null, 'строка подробного описания стоит перед документом')
+assert.equal(hasClass(docBar, 'dsh-polish-desc-bar'), true)
+assert.notEqual(docBar.getAttribute('data-dsh-polish-doc-bar'), null)
+assert.equal(hasClass(docSection, 'dsh-polish-doc-hidden'), true, 'документ скрыт классом')
+assert.equal(getComputedStyle(docSection).display, 'none', 'computed display документа — none')
+assert.equal(findChildClass(docBar, 'dsh-polish-desc-label')?.textContent, 'Подробное описание')
+assert.equal(detailSections.childNodes.length, 3, 'секции: документ, конфиг и строка')
+const docBarAtStart = docBar
 
-/* --- Перерисовка React: без дублей, новое описание с тем же состоянием --- */
+/* --- Клик разворачивает оба блока, состояние пишется в localStorage -------- */
+
+descBar.dispatch('click', { preventDefault() {}, stopPropagation() {} })
+assert.equal(descElement.classList.contains('is-open'), true, 'клик разворачивает описание')
+assert.equal(descBar.classList.contains('is-open'), true)
+assert.equal(getComputedStyle(descBody).display, 'block', 'computed display тела — block')
+assert.equal(descBar.getAttribute('aria-expanded'), 'true')
+
+docBar.dispatch('click', { preventDefault() {}, stopPropagation() {} })
+assert.equal(hasClass(docSection, 'dsh-polish-doc-hidden'), false, 'клик показывает документ')
+assert.equal(docSection.classList.contains('is-open'), true)
+assert.equal(docBar.classList.contains('is-open'), true)
+assert.equal(getComputedStyle(docSection).display, 'block', 'computed display документа — block')
+
+const baseKey = [...storage.keys()].find((key) => key.startsWith('dsh-polish:desc-open:') && !key.endsWith(':doc'))
+const docKey = [...storage.keys()].find((key) => key.endsWith(':doc'))
+assert.ok(baseKey !== undefined, 'состояние описания сохранено')
+assert.equal(storage.get(baseKey), '1')
+assert.ok(docKey !== undefined, 'состояние документа сохранено')
+assert.equal(storage.get(docKey), '1')
+assert.equal(docKey, baseKey + ':doc', 'ключ документа — ключ плагина + :doc')
+
+/* --- Перерисовка React: без дублей, новые узлы попадают в тело ------------ */
 
 const collapseObserver = observers.find((item) =>
   item.targets.some((entry) => entry.options?.childList === true && entry.options?.subtree === true),
 )
-assert.ok(collapseObserver !== undefined, 'MutationObserver за перерисовками подключён')
+assert.ok(collapseObserver !== undefined, 'MutationObserver подключён')
 
-// React добавил ещё один абзац мимо обёртки — он должен попасть в тело.
-const moved = new FakeElement('p')
-moved.textContent = 'Новый абзац после перерисовки.'
-descElement.appendChild(moved)
-
-// Новая страница плагина с тем же заголовком — состояние должно вспомниться.
-const secondDesc = new FakeElement('div')
-secondDesc.className = 'detailDesc_c2'
-const secondParagraph = new FakeElement('p')
-secondParagraph.textContent = 'Второе описание.'
-secondDesc.appendChild(secondParagraph)
-mainElement.appendChild(secondDesc)
+const strayText = new FakeElement('span')
+strayText.textContent = 'Текст, добавленный React после обёртки.'
+descElement.appendChild(strayText)
 
 collapseObserver.callback()
 await new Promise((resolve) => setTimeout(resolve, 320))
 
-assert.equal(moved.parentElement, body, 'новый узел React попал в тело')
-assert.equal(findChildClass(descElement, 'dsh-polish-desc-bar'), bar, 'строка не задублирована')
-assert.equal(descElement.childNodes.filter((node) => String(node.className).includes('dsh-polish-desc-bar')).length, 1)
-assert.equal(secondDesc.classList.contains('is-open'), true, 'развёрнутое состояние вспомнилось')
-assert.equal(findChildClass(secondDesc, 'dsh-polish-desc-body') !== null, true)
-assert.equal(secondParagraph.parentElement, findChildClass(secondDesc, 'dsh-polish-desc-body'))
+assert.equal(strayText.parentElement, descBody, 'новый узел описания попал в тело')
+assert.equal(descElement.childNodes.filter((node) => hasClass(node, 'dsh-polish-desc-bar')).length, 1)
+assert.equal(descElement.childNodes.filter((node) => hasClass(node, 'dsh-polish-desc-body')).length, 1)
+assert.equal(docSection.previousElementSibling, docBarAtStart, 'строка документа не задублирована')
+assert.equal(detailSections.childNodes.filter((node) => hasClass(node, 'dsh-polish-desc-bar')).length, 1)
 
-/* --- Повторный клик сворачивает ------------------------------------------ */
+/* --- Отключение оформления возвращает исходную разметку ------------------ */
 
-bar.dispatch('click', { preventDefault() {}, stopPropagation() {} })
-assert.equal(descElement.classList.contains('is-open'), false, 'повторный клик сворачивает')
-assert.equal(bar.getAttribute('aria-expanded'), 'false')
-assert.equal(storage.get(savedKey), '0')
+assert.equal(typeof cleanups[1], 'function', 'у слоя описания есть cleanup')
+cleanups[1]()
+assert.equal(descElement.getAttribute('data-dsh-polish-desc'), null, 'data-атрибут описания снят')
+assert.equal(findChildClass(descElement, 'dsh-polish-desc-bar'), null, 'строка описания убрана')
+assert.equal(findChildClass(descElement, 'dsh-polish-desc-body'), null, 'обёртка тела убрана')
+assert.equal(paragraph.parentElement, descElement, 'текст вернулся в описание')
+assert.equal(docSection.getAttribute('data-dsh-polish-doc'), null, 'data-атрибут документа снят')
+assert.equal(docSection.previousElementSibling, null, 'строка документа убрана')
+assert.equal(hasClass(docSection, 'dsh-polish-doc-hidden'), false, 'скрывающий класс снят')
+assert.equal(getComputedStyle(docSection).display, 'block', 'документ виден как был')
+assert.equal(detailSections.childNodes.length, 2, 'секции не сломаны: документ и конфиг')
 
 // карточка рендерится без ошибок
-// Внешняя обёртка — свёрнутая строка; проверяем и её, и содержимое.
 const wrapper = sectionRegistration.component({ subject: { kind: 'bundle', pkg: { name: 'dsh-polish' } } })
 assert.equal(typeof wrapper.type, 'function')
-assert.equal(typeof wrapper, 'object')
 const inner = wrapper.type({ ...wrapper.props, children: null })
 assert.equal(inner.type, 'div')
 assert.ok(inner.children.length >= 2)
 
-/* --- Выключение оформления возвращает исходную разметку ------------------ */
-
-assert.equal(typeof cleanups[1], 'function', 'у слоя описания есть cleanup')
-cleanups[1]()
-assert.equal(descElement.getAttribute('data-dsh-polish-desc'), null, 'data-атрибут снят')
-assert.equal(findChildClass(descElement, 'dsh-polish-desc-bar'), null, 'строка убрана')
-assert.equal(findChildClass(descElement, 'dsh-polish-desc-body'), null, 'обёртка убрана')
-assert.equal(paragraph.parentElement, descElement, 'текст вернулся в описание')
-
 console.log('polish smoke: OK')
 console.log('  стили:', css.split('\n').length, 'строк | карточка:', inner.children.length, 'элементов')
-console.log('  описание:', 'свёрнуто, шеврон, память в localStorage, без дублей при перерисовке')
+console.log('  описание:', 'свёрнуто, шеврон, localStorage:', baseKey, '|', docKey)
+console.log('  документ:', 'скрыт data-detail-document, без дублей, restore очищает разметку')

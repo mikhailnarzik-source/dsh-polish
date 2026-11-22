@@ -23,6 +23,9 @@ window.__ModuleLoader__.load({
     const UPDATE_ALL_PATH = '/api/dsh-polish/update-all'
     const DESC_OPEN_PREFIX = 'dsh-polish:desc-open:'
     const DESC_FLAG = 'data-dsh-polish-desc'
+    const DOC_FLAG = 'data-dsh-polish-doc'
+    const DOC_BAR_FLAG = 'data-dsh-polish-doc-bar'
+    const DOC_SELECTOR = '[data-detail-document]'
     // Шеврон вниз; при .is-open CSS поворачивает его на 180°.
     const CHEVRON_SVG =
       '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">' +
@@ -39,6 +42,9 @@ window.__ModuleLoader__.load({
       desc: 'Description',
       descOpen: 'Collapse description',
       descClosed: 'Expand description',
+      descDoc: 'Detailed description',
+      descDocOpen: 'Collapse detailed description',
+      descDocClosed: 'Expand detailed description',
     }
     const ru = {
       reload: 'Обновить',
@@ -51,6 +57,9 @@ window.__ModuleLoader__.load({
       desc: 'Описание',
       descOpen: 'Свернуть описание',
       descClosed: 'Развернуть описание',
+      descDoc: 'Подробное описание',
+      descDocOpen: 'Свернуть подробное описание',
+      descDocClosed: 'Развернуть подробное описание',
     }
 
     const CSS = `
@@ -168,7 +177,7 @@ select option:checked {
   margin-left: auto;
   transition: transform .18s ease;
 }
-[class*="detailDesc"].is-open > .dsh-polish-desc-bar .dsh-polish-desc-chevron {
+.dsh-polish-desc-bar.is-open .dsh-polish-desc-chevron {
   transform: rotate(180deg);
 }
 .dsh-polish-desc-body {
@@ -176,6 +185,11 @@ select option:checked {
 }
 [class*="detailDesc"].is-open > .dsh-polish-desc-body {
   display: block;
+}
+
+/* Подробное описание плагина (README/DETAIL.md): скрыто, пока не открыто. */
+[data-detail-document].dsh-polish-doc-hidden {
+  display: none !important;
 }
 `
 
@@ -286,24 +300,14 @@ select option:checked {
 
     /* --- Сворачиваемое описание на странице плагина ---------------------- */
 
-    /** Короткий стабильный ключ памяти: заголовок плагина, иначе путь. */
-    function detailKey(desc) {
-      try {
-        const main = detailMainOf(desc)
-        const title = main === null ? document.querySelector('[class*="detailTitle"]') : findFirstByPrefix(main, 'detailTitle')
-        const name = String(title?.textContent ?? '').trim()
-        if (name !== '') return DESC_OPEN_PREFIX + hashText(name)
-        const path = String(window.location?.pathname ?? '') + String(window.location?.hash ?? '')
-        return DESC_OPEN_PREFIX + hashText(path === '' ? 'plugin' : path)
-      } catch {
-        return DESC_OPEN_PREFIX + 'plugin'
-      }
+    /** Классы хоста — CSS-модули: хеш впереди (`V7pFBG_detailDesc`). */
+    function classTokens(element) {
+      const name = typeof element?.className === 'string' ? element.className : ''
+      return name.split(/\s+/).filter(Boolean)
     }
 
-    /** Классы хоста хешированы (`detailDesc_ab12`), поэтому сравниваем префикс. */
     function hasClassPrefix(element, prefix) {
-      const name = typeof element?.className === 'string' ? element.className : ''
-      return name.split(/\s+/).some((token) => token === prefix || token.startsWith(prefix + '_') || token.startsWith(prefix + '-'))
+      return classTokens(element).some((token) => token === prefix || token.includes(prefix))
     }
 
     function detailMainOf(element) {
@@ -323,6 +327,30 @@ select option:checked {
         if (nested !== null) return nested
       }
       return null
+    }
+
+    /** Ближайший заголовок плагина: у detailDesc он в detailMain, у документа — выше. */
+    function titleFor(element) {
+      let node = element?.parentElement
+      while (node !== null && node !== undefined) {
+        const title = findFirstByPrefix(node, 'detailTitle')
+        if (title !== null) return title
+        node = node.parentElement
+      }
+      return document.querySelector('[class*="detailTitle"]')
+    }
+
+    /** Короткий стабильный ключ памяти: заголовок плагина, иначе путь. */
+    function detailKey(element) {
+      try {
+        const title = titleFor(element)
+        const name = String(title?.textContent ?? '').trim()
+        if (name !== '') return DESC_OPEN_PREFIX + hashText(name)
+        const path = String(window.location?.pathname ?? '') + String(window.location?.hash ?? '')
+        return DESC_OPEN_PREFIX + hashText(path === '' ? 'plugin' : path)
+      } catch {
+        return DESC_OPEN_PREFIX + 'plugin'
+      }
     }
 
     /** Описание плагина — только `detailDesc*` внутри `detailMain*`. */
@@ -371,25 +399,48 @@ select option:checked {
       return null
     }
 
-    function applyDescState(desc, bar, open) {
-      if (open) desc.classList.add('is-open')
-      else desc.classList.remove('is-open')
-      bar.setAttribute('aria-expanded', open ? 'true' : 'false')
-      const label = open ? translate('descOpen') : translate('descClosed')
-      bar.setAttribute('aria-label', label)
-      bar.title = label
+    function hasExactClass(element, className) {
+      return classTokens(element).includes(className)
+    }
+
+    /**
+     * Состояние панели: `is-open` на контейнере и на строке, а для подробного
+     * описания ещё и скрывающий класс на самом блоке.
+     */
+    function setCollapseState(box, bar, open, kind) {
+      if (box !== null) {
+        if (open) box.classList.add('is-open')
+        else box.classList.remove('is-open')
+      }
+      if (bar !== null) {
+        if (open) bar.classList.add('is-open')
+        else bar.classList.remove('is-open')
+        bar.setAttribute('aria-expanded', open ? 'true' : 'false')
+        const doc = kind === 'doc'
+        const label = open
+          ? translate(doc ? 'descDocOpen' : 'descOpen')
+          : translate(doc ? 'descDocClosed' : 'descClosed')
+        bar.setAttribute('aria-label', label)
+        bar.title = label
+      }
+      if (kind === 'doc' && box !== null) {
+        if (open) box.classList.remove('dsh-polish-doc-hidden')
+        else box.classList.add('dsh-polish-doc-hidden')
+      }
     }
 
     /** Строка-переключатель: подпись слева, шеврон справа. */
-    function createDescBar(desc, key) {
+    function createBar(box, key, kind) {
+      const doc = kind === 'doc'
       const bar = document.createElement('div')
       bar.className = 'dsh-polish-desc-bar'
       bar.setAttribute('role', 'button')
       bar.setAttribute('tabindex', '0')
       bar.dataset.descKey = key
+      if (doc) bar.setAttribute(DOC_BAR_FLAG, '')
       const caption = document.createElement('span')
       caption.className = 'dsh-polish-desc-label'
-      caption.textContent = translate('desc')
+      caption.textContent = translate(doc ? 'descDoc' : 'desc')
       const chevron = document.createElement('span')
       chevron.className = 'dsh-polish-desc-chevron'
       chevron.setAttribute('aria-hidden', 'true')
@@ -405,9 +456,9 @@ select option:checked {
           // событие может быть синтетическим
         }
         const currentKey = typeof bar.dataset?.descKey === 'string' ? bar.dataset.descKey : key
-        const open = !desc.classList.contains('is-open')
+        const open = !bar.classList.contains('is-open')
         saveDescOpen(currentKey, open)
-        applyDescState(desc, bar, open)
+        setCollapseState(box, bar, open, kind)
       }
       bar.addEventListener('click', toggle)
       bar.addEventListener('keydown', (event) => {
@@ -441,7 +492,7 @@ select option:checked {
       }
 
       if (bar === null) {
-        bar = createDescBar(desc, key)
+        bar = createBar(desc, key, 'desc')
         desc.insertBefore(bar, body)
       } else {
         bar.dataset.descKey = key
@@ -450,26 +501,64 @@ select option:checked {
         if (caption !== null && caption.textContent !== label) caption.textContent = label
       }
 
-      applyDescState(desc, bar, open)
+      setCollapseState(desc, bar, open, 'desc')
       desc.setAttribute(DESC_FLAG, '')
       return true
     }
 
-    /** Разложить шевроны по всем описаниям на странице. */
+    /** Строка подробного описания стоит прямо перед секцией документа. */
+    function docBarOf(doc) {
+      const previous = doc?.previousElementSibling
+      if (previous === null || previous === undefined) return null
+      if (hasExactClass(previous, 'dsh-polish-desc-bar') === false) return null
+      return previous.getAttribute(DOC_BAR_FLAG) === null ? null : previous
+    }
+
+    /** Привести подробное описание (README/DETAIL.md) к свёрнутому виду. */
+    function ensureDocCollapse(doc) {
+      const key = detailKey(doc) + ':doc'
+      const open = readDescOpen(key)
+      let bar = docBarOf(doc)
+      if (bar === null) {
+        const parent = doc.parentElement
+        if (parent === null || parent === undefined) return false
+        bar = createBar(doc, key, 'doc')
+        parent.insertBefore(bar, doc)
+      } else {
+        bar.dataset.descKey = key
+        const caption = findChild(bar, 'dsh-polish-desc-label')
+        const label = translate('descDoc')
+        if (caption !== null && caption.textContent !== label) caption.textContent = label
+      }
+      setCollapseState(doc, bar, open, 'doc')
+      doc.setAttribute(DOC_FLAG, '')
+      return true
+    }
+
+    /** Разложить шевроны по всем описаниям и документам на странице. */
     function applyDetailCollapseOnce() {
-      let items
+      let descs
+      let docs
       try {
-        items = document.querySelectorAll('[class*="detailDesc"]')
+        descs = Array.from(document.querySelectorAll('[class*="detailDesc"]'))
+        docs = Array.from(document.querySelectorAll(DOC_SELECTOR))
       } catch {
         return 0
       }
       let count = 0
-      for (const desc of items) {
+      for (const desc of descs) {
         try {
           if (isPluginDesc(desc) === false) continue
           if (ensureDescCollapse(desc) === true) count += 1
         } catch (error) {
           console.error('[dsh-polish] описание плагина не свернулось:', error)
+        }
+      }
+      for (const doc of docs) {
+        try {
+          if (ensureDocCollapse(doc) === true) count += 1
+        } catch (error) {
+          console.error('[dsh-polish] подробное описание не свернулось:', error)
         }
       }
       return count
@@ -520,6 +609,17 @@ select option:checked {
         }
       } catch {
         // вне браузера возвращать нечего
+      }
+      try {
+        for (const doc of document.querySelectorAll('[' + DOC_FLAG + ']')) {
+          const bar = docBarOf(doc)
+          if (bar !== null) bar.remove()
+          doc.classList.remove('is-open')
+          doc.classList.remove('dsh-polish-doc-hidden')
+          doc.removeAttribute(DOC_FLAG)
+        }
+      } catch {
+        // документа на странице нет
       }
     }
 
