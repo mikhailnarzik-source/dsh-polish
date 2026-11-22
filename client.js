@@ -79,6 +79,10 @@ window.__ModuleLoader__.load({
       'hints.backup': 'Check free space on Yandex Disk and start the sync manually.',
       reloadHint: 'Reload page (Ctrl+R)',
       summary: 'Appearance of all plugins, checks and updates.',
+      panelsTitle: 'Panels in the left menu',
+      panelsHint: 'Unpinned a panel? It stays in the “More” menu — pin it back there.',
+      panelsPinTitle: 'Bring all panels back to the left sidebar',
+      panelsPinAll: 'Pin all panels ({count})',
     }
     const ru = {
       reload: 'Обновить',
@@ -127,6 +131,10 @@ window.__ModuleLoader__.load({
       'hints.backup': 'Проверь свободное место на Яндекс.Диске и запусти синхронизацию вручную.',
       reloadHint: 'Обновить страницу (Ctrl+R)',
       summary: 'Внешний вид всех плагинов, проверки и обновления.',
+      panelsTitle: 'Панели в левом меню',
+      panelsHint: 'Открепили панель? Она осталась в меню «Ещё» — там её можно закрепить обратно.',
+      panelsPinTitle: 'Вернуть все панели в левую панель',
+      panelsPinAll: 'Закрепить все панели ({count})',
     }
 
     const CSS = `
@@ -257,6 +265,25 @@ select option:checked {
 /* Подробное описание плагина (README/DETAIL.md): скрыто, пока не открыто. */
 [data-detail-document].dsh-polish-doc-hidden {
   display: none !important;
+}
+
+/* Длинные абзацы чата и страниц плагинов — по ширине.
+   Код, таблицы и списки не трогаем: у них своя раскладка строк. */
+:is(
+  [class*="message"] p,
+  [class*="markdown"] p,
+  [class*="messageText"] p,
+  [class*="markdownBody"] p,
+  [class*="detailDesc"] p,
+  [class*="DETAIL"] p,
+  [class*="detailDocument"] p,
+  [class*="richText"] p,
+  [class*="prose"] p,
+  [data-detail-document] p
+):not(pre p):not(code p):not(table p):not(td p):not(th p):not(li p) {
+  text-align: justify;
+  hyphens: auto;
+  text-justify: inter-word;
 }
 `
 
@@ -447,6 +474,14 @@ select option:checked {
         cursor: 'pointer',
       },
       error: { margin: 0, fontSize: 12, lineHeight: 1.5, color: BAD_COLOR },
+      panellistActions: {
+        display: 'flex',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: 8,
+        padding: '8px 4px 4px',
+        minWidth: 0,
+      },
     }
 
     /** Адаптив и hover строк списка — то, что не выразить inline-стилями. */
@@ -992,6 +1027,53 @@ select option:checked {
       )
     }
 
+    /** Карточка-подсказка: где найти и как вернуть откреплённую панель. */
+    function PanelsBlock() {
+      const t = (key) => translate(key)
+      return cardSection('panels', t('panelsTitle'), null, h('p', { style: S.text }, t('panelsHint')))
+    }
+
+    /**
+     * Меню «Ещё» в левой панели: кнопка «Закрепить все панели (N)».
+     * Слот рендерится внутри меню, поэтому после действия меню закрываем.
+     */
+    function PinAllPanels(props) {
+      const t = (key) => translate(key)
+      const entries = Array.isArray(props?.entries) ? props.entries : []
+      if (entries.length === 0) return null
+      const pinAll = () => {
+        for (const entry of entries) {
+          const id = typeof entry?.id === 'string' ? entry.id : ''
+          if (id === '' || typeof props?.onPinnedChange !== 'function') continue
+          try {
+            props.onPinnedChange(id, true)
+          } catch (error) {
+            console.error('[dsh-polish] не удалось закрепить панель:', error)
+          }
+        }
+        try {
+          if (typeof props?.onDismiss === 'function') props.onDismiss()
+        } catch {
+          // меню уже закрыто
+        }
+      }
+      return h(
+        'div',
+        { style: S.panellistActions, 'data-dsh-polish-panellist-actions': 'pin-all' },
+        h(
+          'button',
+          {
+            type: 'button',
+            style: S.primary,
+            'data-dsh-polish-button': 'primary',
+            title: t('panelsPinTitle'),
+            onClick: pinAll,
+          },
+          fmt(t('panelsPinAll'), { count: entries.length }),
+        ),
+      )
+    }
+
     function UpdatesBlock() {
       const t = (key) => translate(key)
       const [rows, setRows] = React.useState(null)
@@ -1302,6 +1384,7 @@ select option:checked {
           ),
         ),
         h(AppearanceBlock, null),
+        h(PanelsBlock, null),
         h(HealthBlock, null),
         h('div', { style: S.grid, 'data-dsh-polish-grid': 'grid' }, h(JournalBlock, null), h(UpdatesBlock, null)),
       )
@@ -1385,6 +1468,23 @@ select option:checked {
         )
       } catch (error) {
         console.error('[dsh-polish] кнопка обновления недоступна:', error)
+      }
+
+      // Меню «Ещё» в левой панели: возврат откреплённых панелей одним нажатием.
+      try {
+        ctx.slots.inject('sidebar.panellist.actions', () =>
+          ctx.slots.register(
+            {
+              name: 'sidebar.panellist.actions',
+              id: 'dsh-polish-pin-all',
+              order: 90,
+              locale: NS,
+            },
+            PinAllPanels,
+          ),
+        )
+      } catch (error) {
+        console.error('[dsh-polish] кнопка закрепления панелей недоступна:', error)
       }
 
       try {

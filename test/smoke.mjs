@@ -274,6 +274,43 @@ const sectionRegistration = registrations.find((item) => item.options.name === '
 assert.ok(sectionRegistration !== undefined, 'секция страницы плагина зарегистрирована')
 assert.equal(typeof registrations[0].component, 'function')
 
+/* --- Меню «Ещё»: кнопка «Закрепить все панели (N)» ----------------------- */
+
+const panelActionsRegistration = registrations.find((item) => item.options.name === 'sidebar.panellist.actions')
+assert.ok(panelActionsRegistration !== undefined, 'слот sidebar.panellist.actions зарегистрирован')
+assert.equal(panelActionsRegistration.options.id, 'dsh-polish-pin-all')
+assert.equal(typeof panelActionsRegistration.component, 'function')
+assert.equal(
+  panelActionsRegistration.component({ entries: [], onOpen() {}, onPinnedChange() {}, onDismiss() {} }),
+  null,
+  'без панелей кнопки нет',
+)
+const pinnedCalls = []
+let dismissCalls = 0
+const pinAllTree = panelActionsRegistration.component({
+  entries: [
+    { id: 'plugins', label: 'Плагины', pinned: false },
+    { id: 'cards', label: 'Карточки', pinned: false },
+  ],
+  onOpen() {},
+  onPinnedChange: (id, value) => { pinnedCalls.push([id, value]) },
+  onDismiss: () => { dismissCalls += 1 },
+})
+assert.equal(pinAllTree.type, 'div', 'кнопка в обёртке')
+assert.equal(pinAllTree.props['data-dsh-polish-panellist-actions'], 'pin-all')
+const pinAllButton = pinAllTree.children[0]
+assert.equal(pinAllButton.type, 'button')
+assert.equal(pinAllButton.props['data-dsh-polish-button'], 'primary', 'primary-кнопка')
+assert.equal(pinAllButton.props.style.height, 36, 'высота 36')
+assert.equal(pinAllButton.props.style.borderRadius, 10, 'радиус 10')
+assert.equal(pinAllButton.props.style.padding, '0 14px', 'padding 0 14')
+assert.equal(pinAllButton.props.style.whiteSpace, 'nowrap', 'ширина по тексту')
+assert.match(JSON.stringify(pinAllButton.children), /Закрепить все панели \(2\)/, 'подпись с количеством')
+assert.doesNotMatch(JSON.stringify(pinAllButton.props.style), /#fff/, 'нет белого текста')
+pinAllButton.props.onClick()
+assert.deepEqual(pinnedCalls, [['plugins', true], ['cards', true]], 'закрепляет каждую панель')
+assert.equal(dismissCalls, 1, 'меню закрывается')
+
 const cleanups = effects.map((fn) => fn())
 
 const styleElement = headElement.firstChild
@@ -289,6 +326,26 @@ assert.match(css, /\.dsh-polish-desc-body \{\s*display: none/)
 assert.match(css, /\[class\*="detailDesc"\]\.is-open > \.dsh-polish-desc-body/)
 assert.match(css, /\[data-detail-document\]\.dsh-polish-doc-hidden/)
 assert.match(css, /display: none !important/)
+
+/* --- Глобальное выравнивание длинных абзацев ----------------------------- */
+
+const justifyMatch = css.match(/:is\([^{}]*\):not\([^{}]*\)\s*\{[^}]*\}/)
+assert.ok(justifyMatch !== null, 'правило выравнивания по ширине добавлено')
+const justifyRule = justifyMatch[0]
+const justifySelector = justifyRule.slice(0, justifyRule.indexOf('{'))
+assert.match(justifySelector, /\[class\*="message"\] p/, 'абзацы чата')
+assert.match(justifySelector, /\[class\*="markdown"\] p/, 'markdown-абзацы')
+assert.match(justifySelector, /\[class\*="detailDesc"\] p/, 'описание плагина')
+assert.match(justifySelector, /\[class\*="DETAIL"\] p/, 'подробное описание')
+assert.match(justifySelector, /\[data-detail-document\] p/, 'документ плагина')
+assert.match(justifyRule, /text-align:\s*justify/, 'text-align: justify')
+assert.match(justifyRule, /hyphens:\s*auto/, 'hyphens: auto')
+assert.match(justifyRule, /text-justify:\s*inter-word/, 'text-justify: inter-word')
+for (const exclusion of ['pre', 'code', 'table', 'td', 'th', 'li']) {
+  assert.match(justifySelector, new RegExp(`:not\\(${exclusion} p\\)`), `исключение ${exclusion}`)
+}
+// Правило нацелено только на абзацы: теги pre/code/table/li не селекторы.
+assert.doesNotMatch(justifySelector, /(^|,)\s*(pre|code|table|ul|ol|li|td|th)\s*(,|$)/, 'код, таблицы и списки не таргетируются')
 
 function findChildClass(element, className) {
   for (const node of element.childNodes) {
@@ -436,9 +493,16 @@ const refreshButtons = collect(
 assert.equal(refreshButtons.length, 1, 'кнопка «Обновить» в шапке')
 
 const cards = collect(pageTree, (node) => typeof node.props?.['data-dsh-polish-card'] === 'string')
-assert.ok(cards.length >= 4, `карточки-секции отрисованы (${cards.length})`)
+assert.ok(cards.length >= 5, `карточки-секции отрисованы (${cards.length})`)
 assert.ok(cards.every((card) => card.props?.style?.borderRadius === 14), 'у карточек радиус 14')
 assert.ok(cards.every((card) => card.props?.style?.background === 'var(--dsw-alias-bg-layer-1)'), 'фон карточек — токен слоя')
+
+// Блок-подсказка «Панели в левом меню»: заголовок и текст про меню «Ещё».
+const panelsCards = cards.filter((card) => card.props?.['data-dsh-polish-card'] === 'panels')
+assert.equal(panelsCards.length, 1, 'блок «Панели в левом меню» на странице')
+const panelsCardJson = JSON.stringify(panelsCards[0])
+assert.match(panelsCardJson, /Панели в левом меню/, 'заголовок блока')
+assert.match(panelsCardJson, /Открепили панель\? Она осталась в меню «Ещё»/, 'подсказка про меню «Ещё»')
 const switchInput = collect(pageTree, (node) => node.type === 'input' && node.props?.type === 'checkbox')
 assert.equal(switchInput.length, 1, 'переключатель оформления на месте')
 
@@ -485,13 +549,17 @@ assert.equal(sectionRegistration.component({ subject: { kind: 'bundle', pkg: { n
 const ruBundle = dict
 const enBundle = registeredLocales.en
 assert.deepEqual(Object.keys(ruBundle).sort(), Object.keys(enBundle).sort(), 'набор ключей ru и en совпадает')
-for (const key of ['reload', 'healthTitle', 'journalTitle', 'updatesTitle', 'check', 'fix', 'checking']) {
+for (const key of ['reload', 'healthTitle', 'journalTitle', 'updatesTitle', 'check', 'fix', 'checking', 'panelsTitle', 'panelsHint', 'panelsPinAll', 'panelsPinTitle']) {
   assert.equal(typeof enBundle[key], 'string', `en: ключ ${key}`)
   assert.equal(typeof ruBundle[key], 'string', `ru: ключ ${key}`)
 }
+assert.match(ruBundle.panelsHint, /меню «Ещё»/, 'ru-подсказка упоминает меню «Ещё»')
+assert.match(ruBundle.panelsPinAll, /\{count\}/, 'ru-кнопка подставляет количество')
 
 console.log('polish smoke: OK')
 console.log('  стили:', css.split('\n').length, 'строк | карточка:', inner.children.length, 'элементов')
 console.log('  описание:', 'свёрнуто, шеврон, localStorage:', baseKey, '|', docKey)
 console.log('  документ:', 'скрыт data-detail-document, без дублей, restore очищает разметку')
 console.log('  страница:', 'maxWidth 960, шапка 🎨, чип, «Обновить», карточек:', cards.length, ', адаптив')
+console.log('  выравнивание:', 'text-align justify + hyphens auto; код, таблицы и списки исключены')
+console.log('  панели:', 'слот sidebar.panellist.actions, «Закрепить все панели (N)», карточка-подсказка')

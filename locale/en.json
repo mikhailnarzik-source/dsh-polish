@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "Interface polish",
-    "description": "One appearance layer for every plugin: buttons highlight on hover, keyboard focus is visible, fields and scrollbars follow the theme, and plugin descriptions collapse. Its own page shows the environment health (sync, GitHub token, Chrome, MCP, versions) and can check and install plugin updates. The appearance can be switched off with one checkbox.",
+    "description": "One appearance layer for every plugin: buttons highlight on hover, keyboard focus is visible, fields and scrollbars follow the theme, long paragraphs are justified, and plugin descriptions collapse. Its own page shows the environment health (sync, GitHub token, Chrome, MCP, versions), can check and install plugin updates, and explains how to bring back an unpinned panel from the left menu. The appearance can be switched off with one checkbox.",
     "detail": "docs/DETAIL.md"
   }
 }
