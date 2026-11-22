@@ -416,9 +416,11 @@ function createSlotsMock(registry) {
       }
     },
     register: (options, component) => {
-      const record = { options, component }
+      // Хост хранит копию options (ссылки на функции сохраняются) — как в DSH.
+      const erased = { ...(options ?? {}) }
+      const record = { options: erased, component }
       registry.push(record)
-      const entry = { options, component }
+      const entry = { options: erased, component }
       addEntry(options?.name, entry)
       return () => {
         const index = registry.indexOf(record)
@@ -427,7 +429,8 @@ function createSlotsMock(registry) {
       }
     },
     // Хост отдаёт записи без дедупликации — «без дублей» проверяем на стороне
-    // плагина.
+    // плагина. `entries` — как у хоста: все записи слота как есть.
+    entries: (name) => slotRecord(name).entries,
     entriesOfSlot: (name) => slotRecord(name).entries,
     subscribe: (name, listener) => {
       const record = slotRecord(name)
@@ -450,11 +453,7 @@ function createSlotsMock(registry) {
       },
       options.silent !== true,
     )
-    const mainEntry = addEntry(
-      'main',
-      { options: { name: 'main', key: panelId }, component: () => null, host: true },
-      false,
-    )
+    const mainEntry = slots.addHostMain(panelId)
     return { sidebarEntry, mainEntry }
   }
   slots.removeHostPanel = (handle) => {
@@ -463,6 +462,18 @@ function createSlotsMock(registry) {
   }
   // Плагин снял строку левой панели, но сам установлен (main остаётся).
   slots.removeHostSidebar = (handle) => removeEntry('sidebar.panellist', handle.sidebarEntry)
+  // Только main-панель: плагин зарегистрирован, а строки в левой панели нет.
+  slots.addHostMain = (panelId) =>
+    addEntry('main', { options: { name: 'main', key: panelId }, component: () => null, host: true }, false)
+  slots.removeHostMain = (entry) => removeEntry('main', entry)
+  // Плагин сам зарегистрировал строку левой панели (в обход лимитов).
+  slots.addHostSidebar = (panelId, label, order) => ({
+    sidebarEntry: addEntry('sidebar.panellist', {
+      options: { name: 'sidebar.panellist', id: panelId, order, label },
+      component: () => null,
+      host: true,
+    }),
+  })
   return slots
 }
 
@@ -1343,7 +1354,7 @@ const togglesOf = (page) =>
 const rowIdsOf = (page) => rowsOf(page).map((row) => row.props['data-dsh-polish-panel-row'])
 
 /** Загрузить client.js заново: панели «чужих» плагинов лежат в слоте. */
-function loadPolishPlugin(hostPanels, savedValue) {
+function loadPolishPlugin(hostPanels, savedValue, options = {}) {
   if (savedValue === undefined) storage.delete(PANEL_VISIBILITY_KEY)
   else storage.set(PANEL_VISIBILITY_KEY, JSON.stringify(savedValue))
   const loadRegistrations = []
@@ -1354,6 +1365,8 @@ function loadPolishPlugin(hostPanels, savedValue) {
   const cleanups = []
   const slots = createSlotsMock(loadRegistrations)
   const hostEntries = hostPanels.map((panel) => slots.addHostPanel(panel.id, panel.label, panel.order))
+  // Только main-панели: плагин зарегистрирован, а строку в левой панели забыл.
+  const mainEntries = (options.mains ?? []).map((panelId) => slots.addHostMain(panelId))
   const context = {
     // В отличие от загрузки в начале теста, эффекты подписываются сразу:
     // проверяем реакцию на уже после загрузки добавленные панели.
@@ -1373,6 +1386,7 @@ function loadPolishPlugin(hostPanels, savedValue) {
     api,
     slots,
     hostEntries,
+    mainEntries,
     registrations: loadRegistrations,
     cleanups,
     page: () => settingsPageFrom(loadRegistrations),
@@ -1537,6 +1551,120 @@ assert.match(JSON.stringify(cacheRow), /Виджет/, 'подпись снят�
 cacheRow.children[1].props.onClick()
 assert.equal(readPanelStorage().pinned.includes('widget'), true, '«Закрепить» возвращает id в pinned')
 
+/* --- Страховочная регистрация строк панелей ------------------------------ */
+
+const sidebarRegistrationsOf = (regs, panelId) =>
+  regs.filter((item) => item.options?.name === 'sidebar.panellist' && item.options?.id === panelId)
+
+// main-панель есть, строки в sidebar.panellist нет: polish сам регистрирует
+// закреплённые панели с эмодзи-иконкой (whale 🐳, browser 🌐, незнакомый 🧩).
+const emergency = loadPolishPlugin([], undefined, {
+  mains: ['plugin-whale', 'plugin-browser', 'plugin-mystery'],
+})
+const whaleRows = sidebarRegistrationsOf(emergency.registrations, 'plugin-whale')
+assert.equal(whaleRows.length, 1, 'страховочная строка whale зарегистрирована')
+assert.equal(whaleRows[0].options.order, 29, 'порядок whale — из карты плагинов')
+assert.equal(whaleRows[0].options.locale, 'dshPolish', 'подпись из словаря плагина')
+assert.equal(typeof whaleRows[0].options.label, 'function', 'подпись — thunk')
+assert.equal(whaleRows[0].options.label(), 'Кит-помощник', 'название whale из ru-словаря')
+const whaleIcon = whaleRows[0].component({ size: 18 })
+assert.equal(whaleIcon.type, 'span', 'иконка — span с эмодзи')
+assert.equal(whaleIcon.children[0], '🐳', 'иконка whale — 🐳')
+assert.equal(whaleIcon.props.style.fontSize, 18, 'эмодзи 18 px по size prop')
+assert.equal(whaleIcon.props.style.width, 18)
+assert.equal(whaleRows[0].component({ size: 16 }).props.style.fontSize, 16, 'эмодзи 16 px по size prop')
+const browserRows = sidebarRegistrationsOf(emergency.registrations, 'plugin-browser')
+assert.equal(browserRows.length, 1, 'страховочная строка browser зарегистрирована')
+assert.equal(browserRows[0].options.label(), 'Запуск браузера', 'название browser из словаря')
+assert.equal(browserRows[0].component({ size: 16 }).children[0], '🌐', 'иконка browser — 🌐')
+const mysteryRows = sidebarRegistrationsOf(emergency.registrations, 'plugin-mystery')
+assert.equal(mysteryRows.length, 1, 'незнакомый id тоже получает страховочную строку')
+assert.equal(mysteryRows[0].options.label(), 'Mystery', 'имя незнакомого id — человекочитаемое')
+assert.equal(mysteryRows[0].component({ size: 16 }).children[0], '🧩', 'эмодзи незнакомого id по умолчанию')
+assert.equal(mysteryRows[0].options.order, 200, 'незнакомый id — в конце списка')
+window.dispatchEvent(new FakeCustomEvent('dsh-polish:panels-changed'))
+window.dispatchEvent(new FakeCustomEvent('dsh-polish:panels-changed'))
+assert.equal(
+  sidebarRegistrationsOf(emergency.registrations, 'plugin-whale').length,
+  1,
+  'повторные события не дублируют страховочную строку',
+)
+
+// Строка плагина уже есть: polish не вмешивается и не дублирует её.
+const naturalRow = loadPolishPlugin(
+  [{ id: 'plugin-whale', label: 'Кит-помощник', order: 29 }],
+  undefined,
+  { mains: ['plugin-whale'] },
+)
+assert.equal(
+  sidebarRegistrationsOf(naturalRow.registrations, 'plugin-whale').length,
+  0,
+  'при наличии строки плагина страховка не регистрируется',
+)
+
+// Выключенная панель: main есть, строки нет — строка не регистрируется;
+// включение и закрепление событием возвращает её, повторное выключение снимает.
+const hiddenWhaleSaved = { visible: ['polish'], pinned: ['polish'], known: ['polish', 'whale'] }
+const hiddenWhale = loadPolishPlugin([], hiddenWhaleSaved, { mains: ['plugin-whale'] })
+assert.equal(
+  sidebarRegistrationsOf(hiddenWhale.registrations, 'plugin-whale').length,
+  0,
+  'выключенная панель не страхуется',
+)
+storage.set(
+  PANEL_VISIBILITY_KEY,
+  JSON.stringify({ visible: ['polish', 'whale'], pinned: ['polish', 'whale'], known: ['polish', 'whale'] }),
+)
+window.dispatchEvent(new FakeCustomEvent('dsh-polish:panels-changed'))
+assert.equal(
+  sidebarRegistrationsOf(hiddenWhale.registrations, 'plugin-whale').length,
+  1,
+  'после включения и закрепления страховочная строка зарегистрирована',
+)
+storage.set(
+  PANEL_VISIBILITY_KEY,
+  JSON.stringify({ visible: ['polish'], pinned: ['polish'], known: ['polish', 'whale'] }),
+)
+window.dispatchEvent(new FakeCustomEvent('dsh-polish:panels-changed'))
+assert.equal(
+  sidebarRegistrationsOf(hiddenWhale.registrations, 'plugin-whale').length,
+  0,
+  'при выключении страховочная строка снимается',
+)
+
+// Плагин зарегистрировал настоящую строку после страховки: своя строка снимается.
+const takeover = loadPolishPlugin([], undefined, { mains: ['plugin-whale'] })
+assert.equal(sidebarRegistrationsOf(takeover.registrations, 'plugin-whale').length, 1)
+takeover.slots.addHostSidebar('plugin-whale', 'Кит-помощник', 29)
+window.dispatchEvent(new FakeCustomEvent('dsh-polish:panels-changed'))
+window.dispatchEvent(new FakeCustomEvent('dsh-polish:panels-changed'))
+assert.equal(
+  sidebarRegistrationsOf(takeover.registrations, 'plugin-whale').length,
+  0,
+  'настоящая строка плагина вытесняет страховочную и не возвращается обратно',
+)
+// Плагин снова снял строку (панель осталась закреплённой) — страховка
+// возвращается и берёт панель под контроль.
+const naturalSidebarRow = takeover.slots.entries('sidebar.panellist').find((entry) => entry.options?.id === 'plugin-whale')
+takeover.slots.removeHostSidebar({ sidebarEntry: naturalSidebarRow })
+window.dispatchEvent(new FakeCustomEvent('dsh-polish:panels-changed'))
+assert.equal(
+  sidebarRegistrationsOf(takeover.registrations, 'plugin-whale').length,
+  1,
+  'после снятия чужой строки страховка снова регистрирует панель',
+)
+
+// Плагин выгрузился (main-панели больше нет): страховочная строка снимается.
+const unloaded = loadPolishPlugin([], undefined, { mains: ['plugin-whale'] })
+assert.equal(sidebarRegistrationsOf(unloaded.registrations, 'plugin-whale').length, 1)
+unloaded.slots.removeHostMain(unloaded.mainEntries[0])
+window.dispatchEvent(new FakeCustomEvent('dsh-polish:panels-changed'))
+assert.equal(
+  sidebarRegistrationsOf(unloaded.registrations, 'plugin-whale').length,
+  0,
+  'при выгрузке плагина страховочная строка снимается',
+)
+
 // Скрытая панель из сохранённого состояния остаётся выключенной, а новая
 // зарегистрированная панель вне known — видимой и закреплённой по умолчанию.
 const hiddenSaved = {
@@ -1605,5 +1733,9 @@ console.log(
 console.log(
   '  авто-обнаружение:',
   'entriesOfSlot, новый id, переключение, dispatch, сортировка по order, без дублей, снятые панели скрыты, записи сохранены',
+)
+console.log(
+  '  страховка:',
+  'main без строки sidebar.panellist → своя строка с эмодзи-иконкой (🐳/🌐/🧩, 16/18 px); без дублей, снимается при выключении/выгрузке, настоящая строка вытесняет страховочную',
 )
 console.log('  эмодзи-иконки:', PANEL_EMOJI_CASES.length, 'меток ru/en, data-dsh-panel-emoji на nav, observer и cleanup')

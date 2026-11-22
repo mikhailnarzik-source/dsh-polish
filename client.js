@@ -1075,7 +1075,11 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
       for (const slotName of [SIDEBAR_PANELLIST_SLOT, MAIN_PANEL_SLOT]) {
         try {
           ctx.effect(
-            () => ctx.slots.subscribe(slotName, () => syncRegisteredPanels(ctx.slots)),
+            () =>
+              ctx.slots.subscribe(slotName, () => {
+                syncRegisteredPanels(ctx.slots)
+                syncFallbackPanels(ctx)
+              }),
             'dsh-polish: panel slot ' + slotName,
           )
         } catch (error) {
@@ -1091,6 +1095,205 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
         }
       } catch (error) {
         console.error('[dsh-polish] подписка на язык панелей недоступна:', error)
+      }
+    }
+
+    /* --- Страховочная регистрация недостающих строк панелей ----------------- */
+
+    /**
+     * Иногда плагин регистрирует main-панель (`main`, key `plugin-<id>`), но
+     * строку `sidebar.panellist` не создаёт (не успел, ошибся в обработке
+     * события, состояние закрепления потерялось). Тогда панель пропадает из
+     * левой панели, хотя установлена. Страховка: для каждой main-панели с
+     * ключом `plugin-*`, у которой нет строки в `sidebar.panellist`, но панель
+     * должна быть закреплена, `dsh-polish` регистрирует строку сам — с
+     * эмодзи-иконкой, названием из словаря и порядком из карты плагинов.
+     * Чужие строки не трогаем, дублей не создаём; при выключении или выгрузке
+     * плагина свою строку снимаем.
+     */
+    const fallbackSidebarRows = new Map()
+    // id, где уже есть чужая (настоящая) запись: свою строку не возвращаем,
+    // пока чужая не исчезнет. Защищает от цикла «регистрация ↔ снятие», если
+    // чужая запись есть, но хост её не показывает (например, упала).
+    const fallbackBlockedRows = new Map()
+    let fallbackSyncActive = false
+
+    /** Название для страховочной строки: словарь, кэш или id с заглавной. */
+    function fallbackPanelLabel(pluginId) {
+      const key = 'shortcut.' + pluginId + '.title'
+      if (SHORTCUT_META_BY_ID.has(pluginId)) {
+        const translated = translate(key)
+        if (typeof translated === 'string' && translated !== '' && translated !== key) return translated
+      }
+      const cached = panelCache.get(pluginId)
+      if (cached !== undefined && cached.label !== '') return cached.label
+      const text = String(pluginId ?? '').replace(/[._-]+/g, ' ').trim()
+      if (text === '') return String(pluginId ?? '')
+      return text.charAt(0).toUpperCase() + text.slice(1)
+    }
+
+    /** Эмодзи для страховочной строки: карта плагинов, карта меток или 🧩. */
+    function fallbackPanelEmoji(pluginId) {
+      const meta = SHORTCUT_META_BY_ID.get(pluginId)
+      if (meta !== undefined) return meta.emoji
+      return emojiForPanelLabel(fallbackPanelLabel(pluginId)) ?? DEFAULT_PANEL_EMOJI
+    }
+
+    /** Порядок страховочной строки: из карты плагинов, кэша или в конце. */
+    function fallbackPanelOrder(pluginId) {
+      const meta = SHORTCUT_META_BY_ID.get(pluginId)
+      if (meta !== undefined) return meta.order
+      const cached = panelCache.get(pluginId)
+      if (cached !== undefined) return cached.order
+      return 200
+    }
+
+    /** Эмодзи-иконка строки: размер запрашивает хост (16/18 px). */
+    function emojiPanelIcon(emoji) {
+      return function EmojiPanelIcon(props) {
+        const requested = Number(props?.size)
+        const size = Number.isFinite(requested) && requested > 0 ? requested : 16
+        return h(
+          'span',
+          {
+            'data-dsh-polish-icon': 'fallback',
+            'aria-hidden': true,
+            style: {
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: size,
+              height: size,
+              fontSize: size,
+              lineHeight: 1,
+            },
+          },
+          emoji,
+        )
+      }
+    }
+
+    /** Записи слота как есть: `entries` хоста, иначе дедуплицированный список. */
+    function rawPanelEntries(slots, slotName) {
+      try {
+        if (typeof slots?.entries === 'function') return slots.entries(slotName) ?? []
+      } catch (error) {
+        console.error('[dsh-polish] записи слота не прочитаны:', error)
+      }
+      try {
+        if (typeof slots?.entriesOfSlot === 'function') return slots.entriesOfSlot(slotName) ?? []
+      } catch {
+        // слота ещё нет — записей нет
+      }
+      return []
+    }
+
+    /** Зарегистрировать свою страховочную строку панели. */
+    function registerFallbackSidebarRow(ctx, panelId) {
+      const pluginId = pluginIdOfPanel(panelId)
+      if (pluginId === '') return
+      // Уникальный thunk подписи: хост копирует options, но функцию сохраняет
+      // по ссылке — по ней и отличаем свою строку от строки самого плагина.
+      const label = () => fallbackPanelLabel(pluginId)
+      const options = {
+        name: SIDEBAR_PANELLIST_SLOT,
+        id: panelId,
+        order: fallbackPanelOrder(pluginId),
+        label,
+        locale: NS,
+      }
+      const icon = emojiPanelIcon(fallbackPanelEmoji(pluginId))
+      let dispose = null
+      try {
+        dispose = ctx.slots.inject(SIDEBAR_PANELLIST_SLOT, () => ctx.slots.register(options, icon))
+      } catch (error) {
+        console.error('[dsh-polish] страховочная строка панели недоступна:', panelId, error)
+      }
+      if (typeof dispose === 'function') fallbackSidebarRows.set(panelId, { dispose, options, label })
+    }
+
+    /** Снять свою страховочную строку, если она есть. */
+    function disposeFallbackSidebarRow(panelId) {
+      const row = fallbackSidebarRows.get(panelId)
+      if (row === undefined) return
+      fallbackSidebarRows.delete(panelId)
+      try {
+        if (typeof row.dispose === 'function') row.dispose()
+      } catch (error) {
+        console.error('[dsh-polish] не удалось снять страховочную строку панели:', panelId, error)
+      }
+    }
+
+    /** Снять все свои страховочные строки (выгрузка плагина). */
+    function disposeAllFallbackSidebarRows() {
+      for (const panelId of [...fallbackSidebarRows.keys()]) disposeFallbackSidebarRow(panelId)
+    }
+
+    /**
+     * Пересчитать страховочные строки: добавить недостающие закреплённые и
+     * снять лишние — только свои. Вызывается при изменении слотов `main` и
+     * `sidebar.panellist`, событиях состояния и выгрузке.
+     */
+    function syncFallbackPanels(ctx) {
+      const slots = ctx?.slots
+      if (fallbackSyncActive || slots === null || slots === undefined) return
+      if (
+        typeof slots.inject !== 'function' ||
+        typeof slots.register !== 'function' ||
+        typeof slots.entriesOfSlot !== 'function'
+      ) {
+        return
+      }
+      fallbackSyncActive = true
+      try {
+        const rows = rawPanelEntries(slots, SIDEBAR_PANELLIST_SLOT)
+        // Снять свои строки, которым больше не место: панель выключена или
+        // откреплена, плагин выгружен, или есть настоящая строка того же id.
+        for (const [panelId, row] of [...fallbackSidebarRows]) {
+          const pluginId = pluginIdOfPanel(panelId)
+          // Чужая (настоящая) строка того же id: хост хранит копию options, но
+          // функцию подписи — по ссылке, поэтому своя узнаётся по ней.
+          const foreign = rows.some(
+            (entry) => entry?.options?.id === panelId && entry?.options?.label !== row.label,
+          )
+          if (foreign) {
+            // Пока чужая запись на месте, свою не возвращаем — иначе цикл.
+            fallbackBlockedRows.set(panelId, row.label)
+            disposeFallbackSidebarRow(panelId)
+            continue
+          }
+          fallbackBlockedRows.delete(panelId)
+          if (!isPanelPinned(pluginId) || !loadedPanelIds.has(pluginId)) {
+            disposeFallbackSidebarRow(panelId)
+          }
+        }
+        // Чужая запись исчезла (плагин снял строку) — страховка снова разрешена.
+        for (const [panelId, ourLabel] of [...fallbackBlockedRows]) {
+          const foreign = rows.some(
+            (entry) => entry?.options?.id === panelId && entry?.options?.label !== ourLabel,
+          )
+          if (!foreign) fallbackBlockedRows.delete(panelId)
+        }
+        // Добавить недостающие: main-панель есть, строки нет, панель закреплена.
+        const present = new Set(
+          rawPanelEntries(slots, SIDEBAR_PANELLIST_SLOT)
+            .map((entry) => entry?.options?.id)
+            .filter((id) => typeof id === 'string' && id !== ''),
+        )
+        for (const entry of rawPanelEntries(slots, MAIN_PANEL_SLOT)) {
+          const options = entry?.options ?? {}
+          const panelId = typeof options.key === 'string' ? options.key : ''
+          if (!panelId.startsWith(SHORTCUT_PREFIX)) continue
+          // Своя строка управляется syncPolishSidebar — не дублируем её.
+          if (panelId === POLISH_PANEL_ID) continue
+          if (fallbackBlockedRows.has(panelId)) continue
+          if (present.has(panelId) || fallbackSidebarRows.has(panelId)) continue
+          const pluginId = pluginIdOfPanel(panelId)
+          if (pluginId === '' || !isPanelPinned(pluginId)) continue
+          registerFallbackSidebarRow(ctx, panelId)
+        }
+      } finally {
+        fallbackSyncActive = false
       }
     }
 
@@ -2665,6 +2868,7 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
         syncRegisteredPanels(ctx.slots)
         adoptPanelStateFromStorage()
         syncPolishSidebar(ctx)
+        syncFallbackPanels(ctx)
       }
       const onStorage = (event) => {
         const key = event?.key
@@ -2672,6 +2876,7 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
         syncRegisteredPanels(ctx.slots)
         adoptPanelStateFromStorage()
         syncPolishSidebar(ctx)
+        syncFallbackPanels(ctx)
       }
       try {
         if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
@@ -2693,12 +2898,16 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
               // вне браузера снимать нечего
             }
             disposePolishSidebar()
+            disposeAllFallbackSidebarRows()
           },
           'dsh-polish: own panel',
         )
       } catch (error) {
         console.error('[dsh-polish] очистка своей панели недоступна:', error)
       }
+      // Страховка на старте: вернуть строки закреплённых панелей, которые
+      // плагины зарегистрировали в `main`, но забыли в `sidebar.panellist`.
+      syncFallbackPanels(ctx)
     }
 
     function apply(ctx) {
