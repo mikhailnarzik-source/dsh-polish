@@ -379,13 +379,105 @@ const panelSvgTitleNode = new FakeElement('title')
 panelSvgTitleNode.textContent = 'Команда'
 panelSvgTitleSvg.appendChild(panelSvgTitleNode)
 
+/**
+ * Слот-леджер в духе DSH: плагины регистрируют записи, хост отдаёт их через
+ * `entriesOfSlot` и будит подписчиков через `subscribe`. Тест кладёт в тот же
+ * слот панели «чужих» плагинов, чтобы карточка «Панели в левом меню» строила
+ * список из регистраций, а не из захардкоженного массива.
+ */
+function createSlotsMock(registry) {
+  const ledger = new Map()
+  const slotRecord = (name) => {
+    if (typeof name !== 'string' || name === '') return { entries: [], listeners: new Set() }
+    if (!ledger.has(name)) ledger.set(name, { entries: [], listeners: new Set() })
+    return ledger.get(name)
+  }
+  const notify = (name) => {
+    for (const listener of [...slotRecord(name).listeners]) listener()
+  }
+  const addEntry = (name, entry, notifyListeners = true) => {
+    slotRecord(name).entries.push(entry)
+    if (notifyListeners) notify(name)
+    return entry
+  }
+  const removeEntry = (name, entry) => {
+    const record = slotRecord(name)
+    const index = record.entries.indexOf(entry)
+    if (index < 0) return false
+    record.entries.splice(index, 1)
+    notify(name)
+    return true
+  }
+  const slots = {
+    inject: (name, register) => {
+      const dispose = register()
+      return () => {
+        if (typeof dispose === 'function') dispose()
+      }
+    },
+    register: (options, component) => {
+      const record = { options, component }
+      registry.push(record)
+      const entry = { options, component }
+      addEntry(options?.name, entry)
+      return () => {
+        const index = registry.indexOf(record)
+        if (index >= 0) registry.splice(index, 1)
+        removeEntry(options?.name, entry)
+      }
+    },
+    // Хост отдаёт записи без дедупликации — «без дублей» проверяем на стороне
+    // плагина.
+    entriesOfSlot: (name) => slotRecord(name).entries,
+    subscribe: (name, listener) => {
+      const record = slotRecord(name)
+      record.listeners.add(listener)
+      return () => {
+        record.listeners.delete(listener)
+      }
+    },
+  }
+  // Регистрация панели «другого» плагина: снаружи выглядит как его
+  // собственная регистрация в `sidebar.panellist`; main-панель (`main`,
+  // key `plugin-<id>`) плагин регистрирует всегда, даже когда строка снята.
+  slots.addHostPanel = (panelId, label, order, options = {}) => {
+    const sidebarEntry = addEntry(
+      'sidebar.panellist',
+      {
+        options: { name: 'sidebar.panellist', id: panelId, order, label },
+        component: () => null,
+        host: true,
+      },
+      options.silent !== true,
+    )
+    const mainEntry = addEntry(
+      'main',
+      { options: { name: 'main', key: panelId }, component: () => null, host: true },
+      false,
+    )
+    return { sidebarEntry, mainEntry }
+  }
+  slots.removeHostPanel = (handle) => {
+    removeEntry('sidebar.panellist', handle.sidebarEntry)
+    removeEntry('main', handle.mainEntry)
+  }
+  // Плагин снял строку левой панели, но сам установлен (main остаётся).
+  slots.removeHostSidebar = (handle) => removeEntry('sidebar.panellist', handle.sidebarEntry)
+  return slots
+}
+
 const registrations = []
 const effects = []
 let boundNs = ''
 let dict = {}
 let registeredLocales = {}
 const ctx = {
-  effect: (fn) => { effects.push(fn) },
+  // Эффект выполняется сразу (как в Cordis), а в `effects` остаётся функция,
+  // возвращающая cleanup: ниже `cleanups = effects.map(fn => fn())` снимает слои.
+  effect: (fn) => {
+    const cleanup = fn()
+    effects.push(() => (typeof cleanup === 'function' ? cleanup : () => {}))
+  },
   locale: {
     bind: (ns) => { boundNs = ns; return (key) => dict[key] ?? key },
     register: (ns, bundles) => {
@@ -395,31 +487,25 @@ const ctx = {
     },
     subscribe: () => () => {},
   },
-  slots: {
-    inject: (name, register) => {
-      const dispose = register()
-      return () => {
-        if (typeof dispose === 'function') dispose()
-      }
-    },
-    register: (options, component) => {
-      const record = { options, component }
-      registrations.push(record)
-      return () => {
-        const index = registrations.indexOf(record)
-        if (index >= 0) registrations.splice(index, 1)
-      }
-    },
-  },
+  slots: createSlotsMock(registrations),
 }
 
 // Одиннадцать панелей, которые регистрируют сами плагины (id и префикс
 // ключа/строки `plugin-<id>`). dsh-polish из них регистрирует только свою
-// (`polish`), остальные десять — нет.
+// (`polish`), остальные десять — «чужие» плагины: тест кладёт их регистрации
+// прямо в слот, как это сделал бы сам плагин.
 const SHORTCUT_IDS = [
   'cards', 'compact', 'review', 'notify', 'team', 'vault', 'pyrus', 'inbox', 'polish', 'whale', 'browser',
 ]
 const FOREIGN_PANEL_IDS = SHORTCUT_IDS.filter((id) => id !== 'polish')
+// Порядок панелей в слоте — как у настоящих плагинов (`order` регистрации).
+const PANEL_ORDERS = {
+  cards: 20, compact: 21, review: 22, notify: 23, team: 24,
+  vault: 25, pyrus: 26, inbox: 27, polish: 28, whale: 29, browser: 30,
+}
+for (const id of FOREIGN_PANEL_IDS) {
+  ctx.slots.addHostPanel('plugin-' + id, id, PANEL_ORDERS[id])
+}
 
 exported.apply(ctx)
 
@@ -914,7 +1000,10 @@ assert.deepEqual(panelsEvent.detail.visible, saved.visible, 'detail.visible со
 assert.deepEqual(panelsEvent.detail.pinned, saved.pinned, 'detail.pinned совпадает с localStorage')
 assert.equal(panelsEvent.detail.visible.includes('cards'), false, 'в detail выключенного id нет')
 assert.equal(received.length, 1, 'слушатель window получил событие')
-assert.deepEqual(received[0], saved, 'слушатель видит то же состояние')
+assert.deepEqual(received[0].visible, saved.visible, 'слушатель видит visible события')
+assert.deepEqual(received[0].pinned, saved.pinned, 'слушатель видит pinned события')
+assert.ok(Array.isArray(saved.known), 'состояние помнит известные id в known')
+assert.equal(saved.known.includes('cards'), true, 'выключенная панель осталась в known')
 assert.equal(
   registrations.filter((item) => item.options.name === 'main').length,
   1,
@@ -929,7 +1018,8 @@ saved = readPanelStorage()
 assert.equal(saved.visible.includes('cards'), true, 'включённая панель видна в настройках')
 assert.equal(saved.pinned.includes('cards'), false, 'включённая панель попадает в «Ещё», не в рельс')
 assert.equal(panelsEvents().length, 1, 'включение тоже отправляет событие')
-assert.deepEqual(lastPanelsEvent().detail, saved, 'detail — снимок нового состояния')
+assert.deepEqual(lastPanelsEvent().detail.visible, saved.visible, 'detail — снимок нового состояния')
+assert.deepEqual(lastPanelsEvent().detail.pinned, saved.pinned, 'detail — снимок нового состояния')
 window.removeEventListener('dsh-polish:panels-changed', panelsListener)
 
 // Меню «Ещё» показывает нашу видимую-но-не-закреплённую панель.
@@ -1137,7 +1227,7 @@ const enBundle = registeredLocales.en
 assert.deepEqual(Object.keys(ruBundle).sort(), Object.keys(enBundle).sort(), 'набор ключей ru и en совпадает')
 for (const key of [
   'reload', 'healthTitle', 'journalTitle', 'updatesTitle', 'check', 'fix', 'checking',
-  'panelsTitle', 'panelsHint', 'panelsPinAll', 'panelsPinTitle',
+  'panelsTitle', 'panelsHint', 'panelsEmpty', 'panelsPinAll', 'panelsPinTitle',
   'panelsUnpinnedTitle', 'panelsUnpinnedHint', 'panelsPinOne', 'panelsPinOneTitle', 'panelsAllPinned',
   'panelsShowLabel', 'panelsPinned', 'panelsInMore', 'panelsVisibleCount', 'panelsVisibilityHint',
   'shortcutHint',
@@ -1187,25 +1277,14 @@ globalThis.window = makeWindow((entry) => { reloaded = entry })
 new Function(source)()
 const exportedAgain = reloaded.factory((id) => modules[id])
 const reloadRegistrations = []
+const reloadSlots = createSlotsMock(reloadRegistrations)
+for (const id of FOREIGN_PANEL_IDS) {
+  reloadSlots.addHostPanel('plugin-' + id, id, PANEL_ORDERS[id])
+}
 const reloadCtx = {
   ...ctx,
   effect: () => {},
-  slots: {
-    inject: (name, register) => {
-      const dispose = register()
-      return () => {
-        if (typeof dispose === 'function') dispose()
-      }
-    },
-    register: (options, component) => {
-      const record = { options, component }
-      reloadRegistrations.push(record)
-      return () => {
-        const index = reloadRegistrations.indexOf(record)
-        if (index >= 0) reloadRegistrations.splice(index, 1)
-      }
-    },
-  },
+  slots: reloadSlots,
 }
 exportedAgain.apply(reloadCtx)
 const reloadMain = reloadRegistrations.filter((item) => item.options.name === 'main')
@@ -1247,6 +1326,268 @@ assert.equal(
 
 // Без сохранённого ключа — дефолт: все 11 видимы и закреплены (проверено выше).
 
+/* --- Авто-список панелей из слота sidebar.panellist ---------------------- */
+
+/** Страница настроек для конкретной загрузки плагина. */
+function settingsPageFrom(loadRegistrations) {
+  const section = loadRegistrations.find((item) => item.options.name === 'plugins.detail.section')
+  assert.ok(section !== undefined, 'секция страницы зарегистрирована')
+  const wrapper = section.component({ subject: { kind: 'bundle', pkg: { name: 'dsh-polish' } }, children: null })
+  const inner = wrapper.type({ ...wrapper.props, children: null })
+  return renderTree(inner)
+}
+
+const rowsOf = (page) => collect(page, (node) => node.props?.['data-dsh-polish-panel-row'] !== undefined)
+const togglesOf = (page) =>
+  collect(page, (node) => node.type === 'input' && node.props?.['data-dsh-polish-panel-toggle'] !== undefined)
+const rowIdsOf = (page) => rowsOf(page).map((row) => row.props['data-dsh-polish-panel-row'])
+
+/** Загрузить client.js заново: панели «чужих» плагинов лежат в слоте. */
+function loadPolishPlugin(hostPanels, savedValue) {
+  if (savedValue === undefined) storage.delete(PANEL_VISIBILITY_KEY)
+  else storage.set(PANEL_VISIBILITY_KEY, JSON.stringify(savedValue))
+  const loadRegistrations = []
+  let loadedModule
+  globalThis.window = makeWindow((entry) => { loadedModule = entry })
+  new Function(source)()
+  const api = loadedModule.factory((id) => modules[id])
+  const cleanups = []
+  const slots = createSlotsMock(loadRegistrations)
+  const hostEntries = hostPanels.map((panel) => slots.addHostPanel(panel.id, panel.label, panel.order))
+  const context = {
+    // В отличие от загрузки в начале теста, эффекты подписываются сразу:
+    // проверяем реакцию на уже после загрузки добавленные панели.
+    effect: (fn) => {
+      const cleanup = fn()
+      if (typeof cleanup === 'function') cleanups.push(cleanup)
+    },
+    locale: {
+      bind: ctx.locale.bind,
+      register: ctx.locale.register,
+      subscribe: () => () => {},
+    },
+    slots,
+  }
+  api.apply(context)
+  return {
+    api,
+    slots,
+    hostEntries,
+    registrations: loadRegistrations,
+    cleanups,
+    page: () => settingsPageFrom(loadRegistrations),
+  }
+}
+
+// Список строится из entriesOfSlot: известные id (cards, compact), новая
+// панель с подписью-thunk (widget) и ещё одна новая (zeta). Порядок — по
+// order, своя панель polish (order 28) стоит между ними.
+const auto = loadPolishPlugin([
+  { id: 'plugin-zeta', label: 'Зета', order: 40 },
+  { id: 'plugin-compact', label: 'compact', order: 21 },
+  { id: 'plugin-widget', label: () => 'Виджет', order: 5 },
+  { id: 'plugin-cards', label: 'cards', order: 20 },
+])
+const autoPage = auto.page()
+assert.deepEqual(
+  rowIdsOf(autoPage),
+  ['widget', 'cards', 'compact', 'polish', 'zeta'],
+  'строки — из entriesOfSlot, порядок по order',
+)
+const autoToggles = togglesOf(autoPage)
+assert.equal(autoToggles.length, 5, 'переключатель у каждой зарегистрированной панели')
+assert.equal(autoToggles.every((toggle) => toggle.props.checked === true), true, 'новые панели по умолчанию включены')
+const autoRows = rowsOf(autoPage)
+const widgetRow = autoRows.find((row) => row.props['data-dsh-polish-panel-row'] === 'widget')
+assert.match(JSON.stringify(widgetRow), /Виджет/, 'подпись новой панели — из слота (thunk)')
+assert.match(JSON.stringify(widgetRow), /🧩/, 'эмодзи новой панели по умолчанию')
+const compactRow = autoRows.find((row) => row.props['data-dsh-polish-panel-row'] === 'compact')
+assert.match(JSON.stringify(compactRow), /Сжатие диалога/, 'известная панель берёт название из словаря')
+assert.match(JSON.stringify(compactRow), /🗜️/, 'известная панель берёт свой эмодзи')
+assert.match(JSON.stringify(autoPage), /включено: 5 из 5/, 'счётчик — все зарегистрированные панели')
+assert.equal(storage.has(PANEL_VISIBILITY_KEY), false, 'до первого изменения ключ не пишется')
+assert.equal(panelsEvents().length, 0, 'при загрузке событие панелей не отправляется')
+
+// Выключение нового id: уходит из visible и pinned, событие с detail; ранее
+// известные записи (cards/compact/polish) сохраняются.
+const eventsBeforeWidgetOff = panelsEvents().length
+const widgetToggle = () =>
+  togglesOf(auto.page()).find((toggle) => toggle.props['data-dsh-polish-panel-toggle'] === 'widget')
+widgetToggle().props.onChange({ target: { checked: false } })
+const savedWidgetOff = readPanelStorage()
+assert.equal(savedWidgetOff.visible.includes('widget'), false, 'выключенная новая панель не видна')
+assert.equal(savedWidgetOff.pinned.includes('widget'), false, 'выключенная новая панель не закреплена')
+assert.equal(savedWidgetOff.visible.includes('cards'), true, 'ранее известная панель сохранена в visible')
+assert.equal(savedWidgetOff.pinned.includes('cards'), true, 'ранее известная панель сохранена в pinned')
+assert.equal(savedWidgetOff.known.includes('widget'), true, 'выключенный id запомнен в known')
+assert.equal(panelsEvents().length - eventsBeforeWidgetOff, 1, 'выключение отправляет одно событие')
+assert.equal(lastPanelsEvent().detail.visible.includes('widget'), false, 'в detail выключенного id нет')
+assert.equal(lastPanelsEvent().detail.visible.includes('cards'), true, 'detail знает остальные панели')
+assert.equal(
+  togglesOf(auto.page()).find((toggle) => toggle.props['data-dsh-polish-panel-toggle'] === 'widget').props.checked,
+  false,
+  'после выключения флажок новой панели снят',
+)
+
+// Включение: только visible, панель ждёт в «Ещё»; состояние отсортировано по order.
+const eventsBeforeWidgetOn = panelsEvents().length
+widgetToggle().props.onChange({ target: { checked: true } })
+const savedWidgetOn = readPanelStorage()
+assert.equal(savedWidgetOn.visible.includes('widget'), true, 'включённая панель видна')
+assert.equal(savedWidgetOn.pinned.includes('widget'), false, 'включение без закрепления — в «Ещё»')
+assert.deepEqual(
+  savedWidgetOn.visible,
+  ['widget', 'cards', 'compact', 'polish', 'zeta'],
+  'visible отсортирован по order слотов',
+)
+assert.deepEqual(
+  savedWidgetOn.pinned,
+  ['cards', 'compact', 'polish', 'zeta'],
+  'pinned отсортирован по order слотов',
+)
+assert.equal(panelsEvents().length - eventsBeforeWidgetOn, 1, 'включение отправляет одно событие')
+assert.deepEqual(lastPanelsEvent().detail.visible, savedWidgetOn.visible, 'detail.visible совпадает со state')
+assert.deepEqual(lastPanelsEvent().detail.pinned, savedWidgetOn.pinned, 'detail.pinned совпадает со state')
+
+// Снятая панель не показывается, но запись о ней не теряется при сохранении.
+auto.slots.removeHostPanel(auto.hostEntries[0])
+assert.deepEqual(
+  rowIdsOf(auto.page()),
+  ['widget', 'cards', 'compact', 'polish'],
+  'панель без регистрации в настройках не показывается',
+)
+const cardsToggle = () => togglesOf(auto.page()).find((toggle) => toggle.props['data-dsh-polish-panel-toggle'] === 'cards')
+cardsToggle().props.onChange({ target: { checked: false } })
+cardsToggle().props.onChange({ target: { checked: true } })
+assert.equal(
+  readPanelStorage().visible.includes('zeta'),
+  true,
+  'запись снятой панели сохраняется при следующих изменениях',
+)
+
+// Слот изменился после загрузки: подписка обновляет список; дубли не рисуются.
+auto.slots.addHostPanel('plugin-fresh', 'Свежая', 35)
+assert.deepEqual(
+  rowIdsOf(auto.page()),
+  ['widget', 'cards', 'compact', 'polish', 'fresh'],
+  'новая панель появилась после изменения слота',
+)
+assert.equal(
+  togglesOf(auto.page()).find((toggle) => toggle.props['data-dsh-polish-panel-toggle'] === 'fresh').props.checked,
+  true,
+  'новая панель сразу отмечена включённой',
+)
+auto.slots.addHostPanel('plugin-fresh', 'Свежая', 35)
+assert.equal(
+  rowsOf(auto.page()).filter((row) => row.props['data-dsh-polish-panel-row'] === 'fresh').length,
+  1,
+  'дубль id не рисует вторую строку',
+)
+
+// Событие dsh-polish:panels-changed тоже перечитывает слот (даже если слот
+// обновился без уведомления подписчиков).
+auto.slots.addHostPanel('plugin-silent', 'Тихая', 33, { silent: true })
+assert.equal(
+  rowIdsOf(auto.page()).includes('silent'),
+  false,
+  'без уведомления слот ещё не перечитан',
+)
+window.dispatchEvent(new FakeCustomEvent('dsh-polish:panels-changed'))
+assert.equal(
+  rowIdsOf(auto.page()).includes('silent'),
+  true,
+  'событие panels-changed обновляет список панелей',
+)
+
+// Плагин выключил панель и снял свою строку из левой панели: панель остаётся
+// в карточке (main-панель установленного плагина зарегистрирована), чтобы её
+// можно было включить обратно.
+const widgetToggleNode = () =>
+  togglesOf(auto.page()).find((toggle) => toggle.props['data-dsh-polish-panel-toggle'] === 'widget')
+widgetToggleNode().props.onChange({ target: { checked: false } })
+auto.slots.removeHostSidebar(auto.hostEntries[2])
+assert.equal(
+  rowIdsOf(auto.page()).includes('widget'),
+  true,
+  'выключенная панель установленного плагина не пропадает из карточки',
+)
+assert.equal(widgetToggleNode().props.checked, false, 'флажок выключенной панели снят')
+widgetToggleNode().props.onChange({ target: { checked: true } })
+assert.equal(
+  readPanelStorage().visible.includes('widget'),
+  true,
+  'включение из карточки возвращает панель в состояние',
+)
+
+// Плагин не установлен (снята и main-панель): в карточке его нет, но меню
+// «Ещё» берёт подпись из кэша сессии и умеет вернуть id в pinned.
+auto.slots.removeHostPanel(auto.hostEntries[2])
+assert.equal(
+  rowIdsOf(auto.page()).includes('widget'),
+  false,
+  'запись выгруженного плагина не показывается в карточке',
+)
+const autoActions = auto.registrations.find((item) => item.options.name === 'sidebar.panellist.actions')
+const cacheMenu = autoActions.component({ entries: [], onDismiss() {} })
+const cacheRow = cacheMenu.children.find(
+  (node) => node?.props?.['data-dsh-polish-pinnable'] === 'plugin-widget',
+)
+assert.ok(cacheRow !== undefined, 'видимая-но-не-закреплённая панель есть в «Ещё»')
+assert.match(JSON.stringify(cacheRow), /Виджет/, 'подпись снятой панели — из кэша сессии')
+cacheRow.children[1].props.onClick()
+assert.equal(readPanelStorage().pinned.includes('widget'), true, '«Закрепить» возвращает id в pinned')
+
+// Скрытая панель из сохранённого состояния остаётся выключенной, а новая
+// зарегистрированная панель вне known — видимой и закреплённой по умолчанию.
+const hiddenSaved = {
+  visible: ['cards', 'polish'],
+  pinned: ['cards', 'polish'],
+  known: ['cards', 'polish', 'widget'],
+}
+const hiddenState = loadPolishPlugin(
+  [
+    { id: 'plugin-cards', label: 'cards', order: 20 },
+    { id: 'plugin-widget', label: 'Виджет', order: 5 },
+  ],
+  hiddenSaved,
+)
+assert.equal(
+  storage.get(PANEL_VISIBILITY_KEY),
+  JSON.stringify(hiddenSaved),
+  'сохранённое состояние не перезаписано при загрузке',
+)
+const hiddenToggles = togglesOf(hiddenState.page())
+const hiddenById = new Map(hiddenToggles.map((toggle) => [toggle.props['data-dsh-polish-panel-toggle'], toggle]))
+assert.equal(hiddenToggles.length, 3, 'строки: cards, widget и своя polish')
+assert.equal(hiddenById.get('cards').props.checked, true, 'включённая панель отмечена')
+assert.equal(hiddenById.get('widget').props.checked, false, 'выключенная панель из known осталась выключенной')
+const noveltySaved = { visible: ['cards', 'polish'], pinned: ['cards', 'polish'], known: ['cards', 'polish'] }
+const freshState = loadPolishPlugin(
+  [
+    { id: 'plugin-cards', label: 'cards', order: 20 },
+    { id: 'plugin-novelty', label: 'Новинка', order: 6 },
+  ],
+  noveltySaved,
+)
+const freshToggles = togglesOf(freshState.page())
+const freshById = new Map(freshToggles.map((toggle) => [toggle.props['data-dsh-polish-panel-toggle'], toggle]))
+assert.equal(freshById.get('novelty').props.checked, true, 'новая панель вне known видна по умолчанию')
+
+// Своя панель выключена и не закреплена: строка в левой панели снята, но
+// карточка помнит панель установленного плагина (main регистрируется всегда),
+// поэтому её можно включить обратно.
+const emptyList = loadPolishPlugin([], { visible: [], pinned: [], known: ['polish'] })
+const emptyPage = emptyList.page()
+assert.deepEqual(rowIdsOf(emptyPage), ['polish'], 'выключенная своя панель остаётся в карточке')
+assert.equal(togglesOf(emptyPage)[0].props.checked, false, 'флажок выключенной своей панели снят')
+
+// После всех перезагрузок возвращаем окно и состояние первого теста.
+storage.set(
+  PANEL_VISIBILITY_KEY,
+  JSON.stringify({ visible: SHORTCUT_IDS, pinned: SHORTCUT_IDS }),
+)
+
+
 console.log('polish smoke: OK')
 console.log('  стили:', css.split('\n').length, 'строк | карточка:', inner.children.length, 'элементов')
 console.log('  описание:', 'свёрнуто, шеврон, localStorage:', baseKey, '|', docKey)
@@ -1255,10 +1596,14 @@ console.log('  страница:', 'maxWidth 960, шапка 🎨, чип, «О�
 console.log('  выравнивание:', 'text-align justify + hyphens auto; код, таблицы и списки исключены')
 console.log(
   '  панели:',
-  'своя main plugin-polish без блоков плагин-менеджера; sidebar plugin-polish order 28 по pinned; чужие 10 id не регистрируются; openBundle удалён',
+  'список из ctx.slots.entriesOfSlot(sidebar.panellist), порядок по order, новые id с переключателем и дефолтом visible+pinned без записи ключа; своя main plugin-polish без блоков плагин-менеджера',
 )
 console.log(
   '  видимость:',
-  'localStorage dsh-polish:panel-visibility, событие dsh-polish:panels-changed с detail {visible,pinned}, «Ещё» и «Закрепить все (N)», без дублей',
+  'localStorage dsh-polish:panel-visibility {visible,pinned,known}, событие dsh-polish:panels-changed с detail {visible,pinned}, «Ещё» и «Закрепить все (N)», без дублей',
+)
+console.log(
+  '  авто-обнаружение:',
+  'entriesOfSlot, новый id, переключение, dispatch, сортировка по order, без дублей, снятые панели скрыты, записи сохранены',
 )
 console.log('  эмодзи-иконки:', PANEL_EMOJI_CASES.length, 'меток ru/en, data-dsh-panel-emoji на nav, observer и cleanup')

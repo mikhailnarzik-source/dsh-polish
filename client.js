@@ -33,29 +33,39 @@ window.__ModuleLoader__.load({
       '</svg>'
 
     /**
-     * Плагины, панели которых в левой панели регистрируют сами плагины:
-     * main-панель с ключом `plugin-<id>` и строку `sidebar.panellist` с тем же
-     * id. `dsh-polish` панелей не создаёт — он только хранит состояние
-     * видимости и закрепления и сообщает об изменениях событием
-     * `dsh-polish:panels-changed`. Эмодзи — иконка в настройках и меню «Ещё».
+     * Известные плагины с панелями в левом меню: привычные эмодзи для
+     * настроек и меню «Ещё». Сам список панелей больше не захардкожен — он
+     * строится из слота `sidebar.panellist` (`ctx.slots.entriesOfSlot`),
+     * поэтому новый плагин появляется в карточке «Панели в левом меню» сам,
+     * без правки кода. `dsh-polish` чужих панелей не создаёт: он хранит
+     * состояние видимости и закрепления и сообщает об изменениях событием
+     * `dsh-polish:panels-changed`.
      */
-    const SHORTCUT_PLUGINS = [
-      { id: 'cards', emoji: '🧩' },
-      { id: 'compact', emoji: '🗜️' },
-      { id: 'review', emoji: '📝' },
-      { id: 'notify', emoji: '🔔' },
-      { id: 'team', emoji: '👥' },
-      { id: 'vault', emoji: '🔑' },
-      { id: 'pyrus', emoji: '📋' },
-      { id: 'inbox', emoji: '📥' },
-      { id: 'polish', emoji: '🎨' },
-      { id: 'whale', emoji: '🐳' },
-      { id: 'browser', emoji: '🌐' },
+    const SHORTCUT_META = [
+      { id: 'cards', emoji: '🧩', order: 20 },
+      { id: 'compact', emoji: '🗜️', order: 21 },
+      { id: 'review', emoji: '📝', order: 22 },
+      { id: 'notify', emoji: '🔔', order: 23 },
+      { id: 'team', emoji: '👥', order: 24 },
+      { id: 'vault', emoji: '🔑', order: 25 },
+      { id: 'pyrus', emoji: '📋', order: 26 },
+      { id: 'inbox', emoji: '📥', order: 27 },
+      { id: 'polish', emoji: '🎨', order: 28 },
+      { id: 'whale', emoji: '🐳', order: 29 },
+      { id: 'browser', emoji: '🌐', order: 30 },
     ]
-    const SHORTCUT_BY_ID = new Map(SHORTCUT_PLUGINS.map((plugin) => [plugin.id, plugin]))
+    const SHORTCUT_META_BY_ID = new Map(SHORTCUT_META.map((plugin) => [plugin.id, plugin]))
+    // Эмодзи незнакомой панели, пока для её подписи нет своей метки в карте.
+    const DEFAULT_PANEL_EMOJI = '🧩'
     // Префикс ключа main-панели и id строки: `plugin-cards`, `plugin-review`, …
     const SHORTCUT_PREFIX = 'plugin-'
-    // Настройки видимости и закрепления панелей: { visible: string[], pinned: string[] }.
+    // Слот, в который плагины регистрируют строки левой панели.
+    const SIDEBAR_PANELLIST_SLOT = 'sidebar.panellist'
+    // Ключевой слот `main`: плагин регистрирует там свою страницу всегда, даже
+    // когда строка левой панели снята. По нему видно, что плагин установлен.
+    const MAIN_PANEL_SLOT = 'main'
+    // Настройки видимости и закрепления панелей:
+    // { visible: string[], pinned: string[], known: string[] }.
     const PANEL_VISIBILITY_KEY = 'dsh-polish:panel-visibility'
     // Событие для плагинов: по нему они перерегистрируют строку левой панели.
     const PANELS_CHANGED_EVENT = 'dsh-polish:panels-changed'
@@ -160,7 +170,8 @@ window.__ModuleLoader__.load({
       reloadHint: 'Reload page (Ctrl+R)',
       summary: 'Appearance of all plugins, checks and updates.',
       panelsTitle: 'Panels in the left menu',
-      panelsHint: 'Any panel can be pinned — use the pin button in the left sidebar. Unpinned a panel? It stays in the “More” menu — pin it back there.',
+      panelsHint: 'The list is collected automatically: panels come from the plugins themselves. Any panel can be pinned — use the pin button in the left sidebar. Unpinned a panel? It stays in the “More” menu — pin it back there.',
+      panelsEmpty: 'Panels appear here as soon as plugins register them in the left sidebar.',
       panelsPinTitle: 'Bring all panels back to the left sidebar',
       panelsPinAll: 'Pin all panels ({count})',
       panelsUnpinnedTitle: 'Unpinned panels',
@@ -234,7 +245,8 @@ window.__ModuleLoader__.load({
       reloadHint: 'Обновить страницу (Ctrl+R)',
       summary: 'Внешний вид всех плагинов, проверки и обновления.',
       panelsTitle: 'Панели в левом меню',
-      panelsHint: 'Закрепить можно любую панель — кнопкой-булавкой в левой панели. Открепили панель? Она осталась в меню «Ещё» — там её можно закрепить обратно.',
+      panelsHint: 'Список собирается сам: панели приходят из плагинов. Закрепить можно любую панель — кнопкой-булавкой в левой панели. Открепили панель? Она осталась в меню «Ещё» — там её можно закрепить обратно.',
+      panelsEmpty: 'Панели появятся, как только плагины зарегистрируют их в левом меню.',
       panelsPinTitle: 'Вернуть все панели в левую панель',
       panelsPinAll: 'Закрепить все панели ({count})',
       panelsUnpinnedTitle: 'Откреплённые панели',
@@ -839,52 +851,346 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
       }
     }
 
-    /* --- Видимость и закрепление панелей левой панели ---------------------- */
+    /* --- Панели, зарегистрированные плагинами ------------------------------- */
 
-    /** Состояние по умолчанию: все одиннадцать панелей видны и закреплены. */
-    function defaultPanelState() {
-      return {
-        visible: SHORTCUT_PLUGINS.map((plugin) => plugin.id),
-        pinned: SHORTCUT_PLUGINS.map((plugin) => plugin.id),
+    /**
+     * Список панелей — не константа, а проекция слота `sidebar.panellist`:
+     * панели регистрируют сами плагины, и каждая запись даёт id строки
+     * (`plugin-<id>`), порядок (`order`) и подпись (`label` — строка или
+     * thunk, как в `resolveSlotLabel`). Хост обновляет такой слот, когда
+     * плагин загрузился или выгрузился, поэтому новый плагин сам появляется
+     * в настройках «Оформления».
+     */
+    let registeredPanels = []
+    // id плагинов, у которых зарегистрирована main-панель: плагин установлен и
+    // загружен, даже если строку левой панели он сейчас снял (панель выключена
+    // или откреплена). Так карточка настроек не теряет панель, которую можно
+    // вернуть, и не показывает записи выгруженных плагинов.
+    let loadedPanelIds = new Set()
+    // Метаданные панелей, которые видели за сессию: по ним меню «Ещё» может
+    // вернуть и незнакомую панель, если плагин снял её строку, оставив панель
+    // видимой-но-не-закреплённой.
+    const panelCache = new Map()
+    const registeredPanelListeners = new Set()
+    // Слоты панелей: нужны, чтобы перечитать список сразу после регистрации или
+    // снятия своей строки, не полагаясь только на `ctx.slots.subscribe`.
+    let panelRegistrySlots = null
+
+    /** Подпись панели из слота: строка или thunk, как `resolveSlotLabel`. */
+    function resolveSlotLabel(label) {
+      try {
+        return typeof label === 'function' ? label() : label
+      } catch (error) {
+        console.error('[dsh-polish] подпись панели не прочитана:', error)
+        return undefined
       }
     }
 
-    const PANEL_ORDER = new Map(SHORTCUT_PLUGINS.map((plugin, index) => [plugin.id, index]))
+    /** id панели (`plugin-<id>`) → id плагина; чужие id остаются как есть. */
+    function pluginIdOfPanel(panelId) {
+      if (typeof panelId !== 'string') return ''
+      return panelId.startsWith(SHORTCUT_PREFIX) ? panelId.slice(SHORTCUT_PREFIX.length) : panelId
+    }
 
-    /** Привести сохранённое состояние к известным плагинам и порядку списка. */
+    /** Запись панели из слота → строка списка; null, если id нет. */
+    function panelFromSlotEntry(entry) {
+      const options = entry?.options ?? {}
+      const panelId = typeof options?.id === 'string' ? options.id.trim() : ''
+      if (panelId === '') return null
+      const pluginId = pluginIdOfPanel(panelId)
+      if (pluginId === '') return null
+      const order = Number.isFinite(options?.order) ? Number(options.order) : 0
+      const label = resolveSlotLabel(options?.label)
+      const known = SHORTCUT_META_BY_ID.get(pluginId) ?? null
+      return {
+        panelId,
+        pluginId,
+        order,
+        label: typeof label === 'string' && label.trim() !== '' ? label.trim() : '',
+        known: known !== null,
+        emoji: known !== null ? known.emoji : null,
+      }
+    }
+
+    /** Панели из слота: без дублей по id панели и плагина, по `order`. */
+    function collectRegisteredPanels(slots) {
+      let entries = []
+      try {
+        if (typeof slots?.entriesOfSlot === 'function') entries = slots.entriesOfSlot(SIDEBAR_PANELLIST_SLOT)
+      } catch (error) {
+        console.error('[dsh-polish] список панелей не прочитан:', error)
+      }
+      const panels = []
+      const seenPanels = new Set()
+      const seenPlugins = new Set()
+      for (const entry of Array.isArray(entries) ? entries : []) {
+        const panel = panelFromSlotEntry(entry)
+        if (panel === null) continue
+        if (seenPanels.has(panel.panelId) || seenPlugins.has(panel.pluginId)) continue
+        seenPanels.add(panel.panelId)
+        seenPlugins.add(panel.pluginId)
+        panels.push(panel)
+      }
+      panels.sort((a, b) => a.order - b.order)
+      return panels
+    }
+
+    function panelSignature(panels) {
+      return panels.map((panel) => [panel.panelId, panel.order, panel.label].join('\u0000')).join('\u0001')
+    }
+
+    /** id плагинов с зарегистрированной main-панелью (`plugin-<id>` → id). */
+    function collectLoadedPanelIds(slots) {
+      const ids = new Set()
+      let entries = []
+      try {
+        if (typeof slots?.entriesOfSlot === 'function') entries = slots.entriesOfSlot(MAIN_PANEL_SLOT)
+      } catch (error) {
+        console.error('[dsh-polish] список main-панелей не прочитан:', error)
+      }
+      for (const entry of Array.isArray(entries) ? entries : []) {
+        const options = entry?.options ?? {}
+        const key = typeof options.key === 'string' && options.key !== '' ? options.key : options.id
+        const pluginId = pluginIdOfPanel(key)
+        if (pluginId !== '') ids.add(pluginId)
+      }
+      return ids
+    }
+
+    function idsSignature(ids) {
+      return [...ids].sort().join('\u0001')
+    }
+
+    /** Перечитать слоты и, если списки изменились, разбудить подписчиков. */
+    function syncRegisteredPanels(slots) {
+      const next = collectRegisteredPanels(slots)
+      const nextLoaded = collectLoadedPanelIds(slots)
+      for (const panel of next) panelCache.set(panel.pluginId, panel)
+      const panelsChanged = panelSignature(next) !== panelSignature(registeredPanels)
+      const loadedChanged = idsSignature(nextLoaded) !== idsSignature(loadedPanelIds)
+      registeredPanels = next
+      loadedPanelIds = nextLoaded
+      if (!panelsChanged && !loadedChanged) return false
+      for (const listener of [...registeredPanelListeners]) {
+        try {
+          listener()
+        } catch (error) {
+          console.error('[dsh-polish] подписчик списка панелей упал:', error)
+        }
+      }
+      return true
+    }
+
+    function subscribeRegisteredPanels(listener) {
+      registeredPanelListeners.add(listener)
+      return () => {
+        registeredPanelListeners.delete(listener)
+      }
+    }
+
+    function registeredPanelIds() {
+      return registeredPanels.map((panel) => panel.pluginId)
+    }
+
+    /**
+     * Панель по id для меню «Ещё», даже если строка уже снята: известные id
+     * берут метаданные из карты, остальные — из кэша сессии (пока мы видели их
+     * зарегистрированными). Неизвестный и невиденный id восстановить нечем.
+     */
+    function fallbackPanel(pluginId) {
+      const cached = panelCache.get(pluginId)
+      if (cached !== undefined) return cached
+      const meta = SHORTCUT_META_BY_ID.get(pluginId)
+      if (meta === undefined) return null
+      return {
+        panelId: SHORTCUT_PREFIX + pluginId,
+        pluginId,
+        order: meta.order,
+        label: '',
+        known: true,
+        emoji: meta.emoji,
+      }
+    }
+
+    /**
+     * Строки карточки «Панели в левом меню»: зарегистрированные панели плюс
+     * известные панели установленных плагинов, чью строку плагин снял сам
+     * (выключенная или откреплённая панель). Плагин без main-панели считается
+     * выгруженным/неустановленным — такие записи не показываются, но остаются
+     * в `known`.
+     */
+    function cardPanels() {
+      const panels = [...registeredPanels]
+      const seen = new Set(panels.map((panel) => panel.pluginId))
+      for (const id of panelState.known) {
+        if (seen.has(id) || !loadedPanelIds.has(id)) continue
+        const fallback = fallbackPanel(id)
+        if (fallback !== null) panels.push(fallback)
+      }
+      return panels.sort((a, b) => a.order - b.order)
+    }
+
+    /**
+     * Порядок id в общем списке: `order` зарегистрированной панели, затем
+     * запасной `order` из карты известных плагинов или кэша (панель может быть
+     * откреплена и временно отсутствовать в слоте), затем — конец списка.
+     */
+    function panelOrderValue(id) {
+      const panel = registeredPanels.find((item) => item.pluginId === id)
+      if (panel !== undefined) return panel.order
+      const fallback = fallbackPanel(id)
+      return fallback !== null ? fallback.order : Number.MAX_SAFE_INTEGER
+    }
+
+    function sortByPanelOrder(ids) {
+      return ids.sort((a, b) => panelOrderValue(a) - panelOrderValue(b))
+    }
+
+    /** Название панели: словарь для известных, подпись слота для новых. */
+    function panelTitle(panel) {
+      if (panel === null || panel === undefined) return ''
+      if (panel.known) {
+        const key = 'shortcut.' + panel.pluginId + '.title'
+        const title = translate(key)
+        if (typeof title === 'string' && title !== '' && title !== key) return title
+      }
+      return panel.label !== '' ? panel.label : panel.pluginId
+    }
+
+    /** Эмодзи панели: свои — из карты, новые — по подписи или 🧩. */
+    function panelEmojiFor(panel) {
+      if (panel === null || panel === undefined) return DEFAULT_PANEL_EMOJI
+      if (panel.emoji !== null && panel.emoji !== undefined) return panel.emoji
+      return emojiForPanelLabel(panel.label) ?? DEFAULT_PANEL_EMOJI
+    }
+
+    /**
+     * Следить за слотом панелей и локалью: подписи новых панелей — thunk,
+     * они меняются при смене языка. Новые и снятые панели попадают в настройки
+     * без перезагрузки страницы.
+     */
+    function installPanelRegistry(ctx) {
+      panelRegistrySlots = ctx.slots
+      syncRegisteredPanels(ctx.slots)
+      for (const slotName of [SIDEBAR_PANELLIST_SLOT, MAIN_PANEL_SLOT]) {
+        try {
+          ctx.effect(
+            () => ctx.slots.subscribe(slotName, () => syncRegisteredPanels(ctx.slots)),
+            'dsh-polish: panel slot ' + slotName,
+          )
+        } catch (error) {
+          console.error('[dsh-polish] подписка на слот панелей недоступна:', error)
+        }
+      }
+      try {
+        if (typeof ctx.locale?.subscribe === 'function') {
+          ctx.effect(
+            () => ctx.locale.subscribe(() => syncRegisteredPanels(ctx.slots)),
+            'dsh-polish: panel labels',
+          )
+        }
+      } catch (error) {
+        console.error('[dsh-polish] подписка на язык панелей недоступна:', error)
+      }
+    }
+
+    /* --- Видимость и закрепление панелей левой панели ---------------------- */
+
+    /**
+     * Пустое состояние: записей нет, поэтому любая зарегистрированная панель
+     * считается видимой и закреплённой — ровно так её и регистрирует плагин.
+     * Ключ в localStorage до первого изменения не пишется.
+     */
+    function emptyPanelState() {
+      return { visible: [], pinned: [], known: [] }
+    }
+
+    /**
+     * Привести сохранённое состояние к строкам id. `known` — id, о которых
+     * состояние уже знает: если id есть в `known`, но нет в `visible`/`pinned`,
+     * панель выключена; id вне `known` — новая панель плагина (по умолчанию
+     * видна и закреплена). Старые записи без `known` знают ровно те id, что
+     * перечислены в `visible`/`pinned`, поэтому новые панели после обновления
+     * плагина тоже считаются видимыми и закреплёнными.
+     */
     function normalizePanelState(value) {
       const visible = []
       const pinned = []
+      const known = []
       const take = (list, target) => {
         if (!Array.isArray(list)) return
         for (const item of list) {
-          if (typeof item !== 'string' || !SHORTCUT_BY_ID.has(item)) continue
-          if (target.includes(item)) continue
-          target.push(item)
+          if (typeof item !== 'string') continue
+          const id = item.trim()
+          if (id === '' || target.includes(id)) continue
+          target.push(id)
         }
       }
+      take(value?.known, known)
       take(value?.visible, visible)
       take(value?.pinned, pinned)
-      visible.sort((a, b) => PANEL_ORDER.get(a) - PANEL_ORDER.get(b))
-      pinned.sort((a, b) => PANEL_ORDER.get(a) - PANEL_ORDER.get(b))
-      return { visible, pinned: pinned.filter((id) => visible.includes(id)) }
+      for (const id of [...visible, ...pinned]) {
+        if (!known.includes(id)) known.push(id)
+      }
+      // Старый формат (1.4.21 и раньше) хранил только visible/pinned и всегда
+      // перечислял все одиннадцать наших id: отсутствие id значит «выключена»,
+      // а не «новая панель». Дополняем known картой известных плагинов, иначе
+      // выключенная до обновления панель снова стала бы видимой.
+      const legacy = !Array.isArray(value?.known)
+      if (legacy) {
+        for (const meta of SHORTCUT_META) {
+          if (!known.includes(meta.id)) known.push(meta.id)
+        }
+      }
+      return {
+        visible: sortByPanelOrder(visible),
+        pinned: sortByPanelOrder(pinned.filter((id) => visible.includes(id))),
+        known: sortByPanelOrder(known),
+      }
     }
 
     function readPanelState() {
       try {
         const raw = localStorage.getItem(PANEL_VISIBILITY_KEY)
-        if (raw === null || raw === '') return defaultPanelState()
+        if (raw === null || raw === '') return emptyPanelState()
         return normalizePanelState(JSON.parse(raw))
       } catch {
-        return defaultPanelState()
+        return emptyPanelState()
       }
     }
 
     let panelState = readPanelState()
     const panelStateListeners = new Set()
 
+    /** id, о которых состояние знает: выключенная панель остаётся в `known`. */
+    function isPanelKnown(id) {
+      return panelState.known.includes(id)
+    }
+
+    function isPanelVisible(id) {
+      return isPanelKnown(id) ? panelState.visible.includes(id) : true
+    }
+
+    function isPanelPinned(id) {
+      return isPanelKnown(id) ? panelState.pinned.includes(id) : true
+    }
+
+    /** Все id, которые состояние должно помнить: записи + зарегистрированные. */
+    function statePanelIds() {
+      const ids = [...panelState.known]
+      for (const id of registeredPanelIds()) {
+        if (!ids.includes(id)) ids.push(id)
+      }
+      return sortByPanelOrder(ids)
+    }
+
+    /** Снимок для UI и события: реальные `visible`/`pinned` всех известных id. */
     function getPanelState() {
-      return { visible: [...panelState.visible], pinned: [...panelState.pinned] }
+      const ids = statePanelIds()
+      return {
+        visible: ids.filter((id) => isPanelVisible(id)),
+        pinned: ids.filter((id) => isPanelPinned(id)),
+      }
     }
 
     function writePanelState() {
@@ -898,9 +1204,11 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
     /**
      * Сообщить плагинам, что видимость или закрепление изменились.
      *
-     * Каждый из одиннадцати плагинов сам регистрирует main-панель и строку
-     * `sidebar.panellist`; по этому событию он перерегистрирует или снимает
-     * строку. `detail` — снимок состояния `{ visible, pinned }` (массивы id).
+     * Каждый плагин сам регистрирует main-панель и строку `sidebar.panellist`;
+     * по этому событию он перерегистрирует или снимает строку. `detail` —
+     * снимок состояния `{ visible, pinned }` (массивы id): в нём есть и новые
+     * панели, которых ещё нет в localStorage, — их плагин видит по умолчанию
+     * закреплёнными.
      */
     function dispatchPanelsChanged(state) {
       try {
@@ -932,10 +1240,21 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
       }
     }
 
+    /**
+     * Сохранить изменение: в `known` попадают все id, которые состояние видело
+     * (записи и зарегистрированные панели), поэтому ранее известные записи не
+     * теряются, а новые панели после первого изменения запоминаются как
+     * выключенные/включённые в явном виде.
+     */
     function commitPanelState(next) {
-      panelState = normalizePanelState(next)
+      const known = [...panelState.known]
+      for (const id of [...(next?.visible ?? []), ...(next?.pinned ?? []), ...registeredPanelIds()]) {
+        if (typeof id !== 'string' || id === '' || known.includes(id)) continue
+        known.push(id)
+      }
+      panelState = normalizePanelState({ visible: next?.visible, pinned: next?.pinned, known })
       writePanelState()
-      dispatchPanelsChanged(panelState)
+      dispatchPanelsChanged(getPanelState())
       notifyPanelStateListeners()
     }
 
@@ -953,38 +1272,58 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
       }
     }
 
-    function isPanelVisible(id) {
-      return panelState.visible.includes(id)
-    }
-
-    function isPanelPinned(id) {
-      return panelState.pinned.includes(id)
-    }
-
-    /** id панели (`plugin-<id>`) → id плагина; null для чужих панелей. */
+    /** id панели хоста → id плагина, если это наша зарегистрированная панель. */
     function shortcutIdFromPanel(panelId) {
-      if (typeof panelId !== 'string' || !panelId.startsWith(SHORTCUT_PREFIX)) return null
-      const id = panelId.slice(SHORTCUT_PREFIX.length)
-      return SHORTCUT_BY_ID.has(id) ? id : null
+      const panel = registeredPanels.find((item) => item.panelId === panelId)
+      return panel === undefined ? null : panel.pluginId
     }
 
-    /** Панели, которые видны, но не закреплены: их место — меню «Ещё». */
-    function visibleUnpinnedPlugins() {
-      return SHORTCUT_PLUGINS.filter((plugin) => isPanelVisible(plugin.id) && !isPanelPinned(plugin.id))
+    /**
+     * Панели, которые видны, но не закреплены: их место — меню «Ещё».
+     * Это зарегистрированные панели, а также известные панели, чья строка
+     * сейчас не зарегистрирована (откреплённый плагин снимает её сам): для них
+     * берём метаданные из карты известных плагинов или из кэша сессии. Совсем
+     * незнакомый id без регистрации восстановить нечем — он останется в `known`.
+     */
+    function visibleUnpinnedPanels() {
+      const panels = []
+      const seen = new Set()
+      for (const panel of registeredPanels) {
+        seen.add(panel.pluginId)
+        if (isPanelVisible(panel.pluginId) && !isPanelPinned(panel.pluginId)) panels.push(panel)
+      }
+      for (const id of panelState.known) {
+        if (seen.has(id)) continue
+        if (!isPanelVisible(id) || isPanelPinned(id)) continue
+        const fallback = fallbackPanel(id)
+        if (fallback !== null) panels.push(fallback)
+      }
+      return panels.sort((a, b) => a.order - b.order)
     }
 
     /* --- Управление видимостью и закреплением ------------------------------ */
+
+    /** Есть ли панель с таким id: зарегистрирована сейчас или известна состоянию. */
+    function hasPanelId(id) {
+      return (
+        typeof id === 'string' &&
+        id !== '' &&
+        (registeredPanelIds().includes(id) || isPanelKnown(id))
+      )
+    }
 
     /**
      * Показывать или скрыть панель плагина из настроек «Оформления».
      * Включение добавляет id только в `visible` — плагин уходит в меню «Ещё»,
      * где его закрепляют кнопкой. Выключение убирает id и из `visible`, и из
-     * `pinned`: панель не видна ни в левой панели, ни в «Ещё».
+     * `pinned`: панель не видна ни в левой панели, ни в «Ещё». Работает для
+     * любого зарегистрированного id, включая новые плагины.
      */
     function setPanelVisible(id, visible) {
-      if (!SHORTCUT_BY_ID.has(id)) return getPanelState()
-      const visibleIds = panelState.visible.filter((item) => item !== id)
-      const pinnedIds = panelState.pinned.filter((item) => item !== id)
+      const snapshot = getPanelState()
+      if (!hasPanelId(id)) return snapshot
+      const visibleIds = snapshot.visible.filter((item) => item !== id)
+      const pinnedIds = snapshot.pinned.filter((item) => item !== id)
       if (visible) visibleIds.push(id)
       commitPanelState({ visible: visibleIds, pinned: pinnedIds })
       return getPanelState()
@@ -992,20 +1331,22 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
 
     /** Закрепить панель плагина: id попадает в `pinned`, плагин возвращает строку. */
     function pinShortcutPanel(id) {
-      if (!SHORTCUT_BY_ID.has(id)) return false
-      const visibleIds = isPanelVisible(id) ? [...panelState.visible] : [...panelState.visible, id]
-      const pinnedIds = [...panelState.pinned.filter((item) => item !== id), id]
+      if (!hasPanelId(id)) return false
+      const snapshot = getPanelState()
+      const visibleIds = snapshot.visible.includes(id) ? [...snapshot.visible] : [...snapshot.visible, id]
+      const pinnedIds = [...snapshot.pinned.filter((item) => item !== id), id]
       commitPanelState({ visible: visibleIds, pinned: pinnedIds })
       return true
     }
 
     /** «Закрепить все панели (N)»: все переданные id — в `pinned` одним изменением. */
     function pinAllShortcutPanels(ids) {
-      const visibleIds = [...panelState.visible]
-      const pinnedIds = [...panelState.pinned]
+      const snapshot = getPanelState()
+      const visibleIds = [...snapshot.visible]
+      const pinnedIds = [...snapshot.pinned]
       const done = []
       for (const id of Array.isArray(ids) ? ids : []) {
-        if (!SHORTCUT_BY_ID.has(id)) continue
+        if (!hasPanelId(id)) continue
         if (!visibleIds.includes(id)) visibleIds.push(id)
         if (!pinnedIds.includes(id)) pinnedIds.push(id)
         done.push(id)
@@ -1659,21 +2000,40 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
     }
 
     /**
-     * Карточка «Панели в левом меню»: список одиннадцати плагинов с
-     * переключателем «Показывать в левом меню». Состояние — в localStorage;
-     * каждое изменение уходит событием `dsh-polish:panels-changed`, и плагины
-     * сами перерегистрируют свою строку в левой панели.
+     * Карточка «Панели в левом меню»: список строится из зарегистрированных
+     * панелей (`ctx.slots.entriesOfSlot('sidebar.panellist')`) и известных
+     * панелей установленных плагинов (по main-слоту), с переключателем
+     * «Показывать в левом меню» у каждой. Новый плагин появляется здесь сам:
+     * порядок — по `order` слота, подпись — из словаря для известных плагинов
+     * или из слота для новых. Состояние — в localStorage (панели вне `known`
+     * считаются видимыми и закреплёнными); каждое изменение уходит событием
+     * `dsh-polish:panels-changed`, и плагины сами перерегистрируют строку.
      */
     function PanelsBlock() {
       const t = (key) => translate(key)
       const [state, setState] = React.useState(() => getPanelState())
-      React.useEffect(() => subscribePanelState(() => setState(getPanelState())), [])
+      const [, setPanelsRevision] = React.useState(0)
+      React.useEffect(() => {
+        const offState = subscribePanelState(() => setState(getPanelState()))
+        const offPanels = subscribeRegisteredPanels(() => {
+          // Новая панель по умолчанию видима: обновляем и снимок состояния,
+          // иначе её флажок остался бы снятым до следующего изменения.
+          setState(getPanelState())
+          setPanelsRevision((value) => value + 1)
+        })
+        return () => {
+          offState()
+          offPanels()
+        }
+      }, [])
+      const panels = cardPanels()
       const toggle = (id, nextVisible) => {
         setPanelVisible(id, nextVisible)
         setState(getPanelState())
       }
+      const visibleCount = panels.filter((panel) => state.visible.includes(panel.pluginId)).length
       const actions = chipNode(
-        fmt(t('panelsVisibleCount'), { count: state.visible.length, total: SHORTCUT_PLUGINS.length }),
+        fmt(t('panelsVisibleCount'), { count: visibleCount, total: panels.length }),
         'brand',
       )
       return cardSection(
@@ -1681,34 +2041,37 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
         t('panelsTitle'),
         actions,
         h('p', { style: S.text }, t('panelsHint')),
-        h(
-          'div',
-          { style: S.list, 'data-dsh-polish-panels-list': 'list' },
-          ...SHORTCUT_PLUGINS.map((plugin) => {
-            const visible = state.visible.includes(plugin.id)
-            const pinned = state.pinned.includes(plugin.id)
-            const name = t('shortcut.' + plugin.id + '.title')
-            return h(
+        panels.length === 0
+          ? h('p', { style: S.hint, 'data-dsh-polish-panels-empty': 'true' }, t('panelsEmpty'))
+          : h(
               'div',
-              { key: plugin.id, style: S.panellistRow, 'data-dsh-polish-panel-row': plugin.id },
-              h('span', { 'aria-hidden': true, style: { flex: 'none', fontSize: 15, lineHeight: 1 } }, plugin.emoji),
-              h('span', { style: S.panellistLabel, title: name }, name),
-              h(
-                'label',
-                { style: S.switchRow },
-                h('input', {
-                  type: 'checkbox',
-                  checked: visible,
-                  'data-dsh-polish-panel-toggle': plugin.id,
-                  'aria-label': t('panelsShowLabel') + ': ' + name,
-                  onChange: (event) => toggle(plugin.id, event.target.checked),
-                }),
-                h('span', null, t('panelsShowLabel')),
-              ),
-              visible ? chipNode(pinned ? t('panelsPinned') : t('panelsInMore'), pinned ? 'ok' : 'brand') : null,
-            )
-          }),
-        ),
+              { style: S.list, 'data-dsh-polish-panels-list': 'list' },
+              ...panels.map((panel) => {
+                const visible = state.visible.includes(panel.pluginId)
+                const pinned = state.pinned.includes(panel.pluginId)
+                const name = panelTitle(panel)
+                const emoji = panelEmojiFor(panel)
+                return h(
+                  'div',
+                  { key: panel.pluginId, style: S.panellistRow, 'data-dsh-polish-panel-row': panel.pluginId },
+                  h('span', { 'aria-hidden': true, style: { flex: 'none', fontSize: 15, lineHeight: 1 } }, emoji),
+                  h('span', { style: S.panellistLabel, title: name }, name),
+                  h(
+                    'label',
+                    { style: S.switchRow },
+                    h('input', {
+                      type: 'checkbox',
+                      checked: visible,
+                      'data-dsh-polish-panel-toggle': panel.pluginId,
+                      'aria-label': t('panelsShowLabel') + ': ' + name,
+                      onChange: (event) => toggle(panel.pluginId, event.target.checked),
+                    }),
+                    h('span', null, t('panelsShowLabel')),
+                  ),
+                  visible ? chipNode(pinned ? t('panelsPinned') : t('panelsInMore'), pinned ? 'ok' : 'brand') : null,
+                )
+              }),
+            ),
         h('p', { style: S.hint }, t('panelsVisibilityHint')),
         h('p', { style: S.hint }, t('shortcutHint')),
       )
@@ -1717,9 +2080,9 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
     /**
      * Меню «Ещё» в левой панели: список панелей, которые видны, но не
      * закреплены, с кнопкой «Закрепить» у каждой и общей кнопкой
-     * «Закрепить все панели (N)». Наши строки берутся из localStorage,
+     * «Закрепить все панели (N)». Наши строки берутся из состояния,
      * откреплённые панели хоста — из `entries`, без дублей по id.
-     * Закрепление нашей панели меняет localStorage и отправляет событие
+     * Закрепление нашей панели меняет состояние и отправляет событие
      * `dsh-polish:panels-changed`: строку левой панели вернёт сам плагин.
      * Слот рендерится внутри меню, поэтому после действия меню закрываем.
      */
@@ -1728,14 +2091,13 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
       const entries = Array.isArray(props?.entries) ? props.entries : []
       const labelOf = (entry) =>
         typeof entry?.label === 'string' && entry.label !== '' ? entry.label : String(entry?.id ?? '')
-      // Сначала наши видимые-но-не-закреплённые плагины: их может не быть в
+      // Сначала наши видимые-но-не-закреплённые панели: их может не быть в
       // entries, пока панель не зарегистрирована.
       const rows = []
       const seen = new Set()
-      for (const plugin of visibleUnpinnedPlugins()) {
-        const id = SHORTCUT_PREFIX + plugin.id
-        seen.add(id)
-        rows.push({ id, label: translate('shortcut.' + plugin.id + '.title'), pluginId: plugin.id })
+      for (const panel of visibleUnpinnedPanels()) {
+        seen.add(panel.panelId)
+        rows.push({ id: panel.panelId, label: panelTitle(panel), pluginId: panel.pluginId })
       }
       // Затем откреплённые панели хоста — кроме тех, что уже есть в нашем списке.
       for (const entry of entries) {
@@ -2197,9 +2559,11 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
 
     /* --- Своя панель «Оформление интерфейса» ------------------------------- */
 
-    // dsh-polish — один из одиннадцати плагинов с панелью: main-панель с ключом
-    // `plugin-polish` он регистрирует сам (как и остальные плагины), а строку
-    // левой панели — только когда id `polish` закреплён в общем состоянии.
+    // dsh-polish — такой же плагин с панелью, как остальные: main-панель с
+    // ключом `plugin-polish` он регистрирует сам, а строку левой панели —
+    // только когда id `polish` закреплён в общем состоянии. Свою строку он же
+    // и видит в списке `sidebar.panellist`, поэтому карточка настроек
+    // показывает «Оформление интерфейса» наравне с чужими панелями.
     const POLISH_PANEL_ID = SHORTCUT_PREFIX + 'polish'
     const POLISH_SIDEBAR_ORDER = 28
     // Disposer зарегистрированной строки sidebar.panellist (null — строки нет).
@@ -2249,6 +2613,7 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
       } catch (error) {
         console.error('[dsh-polish] не удалось снять строку своей панели:', error)
       }
+      if (panelRegistrySlots !== null) syncRegisteredPanels(panelRegistrySlots)
     }
 
     /**
@@ -2279,26 +2644,32 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
         polishSidebarDispose = null
         console.error('[dsh-polish] строка своей панели недоступна:', error)
       }
+      // Свой id может быть тем самым новым/снятым: список панелей читаем сразу,
+      // не дожидаясь уведомления слота.
+      if (panelRegistrySlots !== null) syncRegisteredPanels(panelRegistrySlots)
     }
 
     /**
      * Своя панель: main регистрируется всегда, строка — по `pinned`.
      * Реагируем на событие `dsh-polish:panels-changed` (другие плагины и наша
      * страница настроек шлют его после изменения состояния) и на `storage`
-     * (изменение из другой вкладки): перечитываем localStorage и
-     * перерегистрируем строку. main не трогаем.
+     * (изменение из другой вкладки): перечитываем localStorage, заодно
+     * перечитываем слот панелей (плагин мог снять или вернуть строку) и
+     * перерегистрируем свою строку. main не трогаем.
      */
     function installPolishPanel(ctx) {
       registerPolishMainPanel(ctx)
       syncPolishSidebar(ctx)
 
       const onPanelsChanged = () => {
+        syncRegisteredPanels(ctx.slots)
         adoptPanelStateFromStorage()
         syncPolishSidebar(ctx)
       }
       const onStorage = (event) => {
         const key = event?.key
         if (key !== null && key !== undefined && key !== PANEL_VISIBILITY_KEY) return
+        syncRegisteredPanels(ctx.slots)
         adoptPanelStateFromStorage()
         syncPolishSidebar(ctx)
       }
@@ -2410,6 +2781,10 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
 
       // Цветные эмодзи вместо одноцветных SVG у всех панелей левой панели.
       applyPanelEmoji(ctx)
+
+      // Список панелей в настройках — проекция слота `sidebar.panellist`:
+      // новые плагины появляются в карточке «Панели в левом меню» сами.
+      installPanelRegistry(ctx)
 
       // Своя панель «Оформление интерфейса» по тому же контракту: main всегда,
       // строка — только когда id `polish` закреплён.
