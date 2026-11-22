@@ -33,36 +33,32 @@ window.__ModuleLoader__.load({
       '</svg>'
 
     /**
-     * Плагины без собственной панели. DSH умеет закреплять в левой панели
-     * только то, что там уже есть (main-панель + строка `sidebar.panellist`),
-     * поэтому для каждого такого плагина плагин регистрирует пару: заглушку
-     * панели (`main`, ключ `plugin-<id>`) и строку левой панели
-     * (`sidebar.panellist`, id `plugin-<id>`). Ключ и id обязаны совпадать —
-     * строка открывает main-панель по тому же id. Эмодзи — иконка строки.
+     * Плагины, панели которых в левой панели регистрируют сами плагины:
+     * main-панель с ключом `plugin-<id>` и строку `sidebar.panellist` с тем же
+     * id. `dsh-polish` панелей не создаёт — он только хранит состояние
+     * видимости и закрепления и сообщает об изменениях событием
+     * `dsh-polish:panels-changed`. Эмодзи — иконка в настройках и меню «Ещё».
      */
     const SHORTCUT_PLUGINS = [
-      { id: 'cards', emoji: '🧩', packageName: 'dsh-cards' },
-      { id: 'compact', emoji: '🗜️', packageName: 'dsh-compact' },
-      { id: 'review', emoji: '📝', packageName: 'dsh-review' },
-      { id: 'notify', emoji: '🔔', packageName: 'dsh-notify' },
-      { id: 'team', emoji: '👥', packageName: 'dsh-team' },
-      { id: 'vault', emoji: '🔑', packageName: 'dsh-vault' },
-      { id: 'pyrus', emoji: '📋', packageName: 'dsh-pyrus' },
-      { id: 'inbox', emoji: '📥', packageName: 'dsh-inbox' },
-      { id: 'polish', emoji: '🎨', packageName: 'dsh-polish' },
-      { id: 'whale', emoji: '🐳', packageName: 'dsh-plugin-whale-pet' },
-      { id: 'browser', emoji: '🌐', packageName: 'dsh-browser-launcher' },
+      { id: 'cards', emoji: '🧩' },
+      { id: 'compact', emoji: '🗜️' },
+      { id: 'review', emoji: '📝' },
+      { id: 'notify', emoji: '🔔' },
+      { id: 'team', emoji: '👥' },
+      { id: 'vault', emoji: '🔑' },
+      { id: 'pyrus', emoji: '📋' },
+      { id: 'inbox', emoji: '📥' },
+      { id: 'polish', emoji: '🎨' },
+      { id: 'whale', emoji: '🐳' },
+      { id: 'browser', emoji: '🌐' },
     ]
     const SHORTCUT_BY_ID = new Map(SHORTCUT_PLUGINS.map((plugin) => [plugin.id, plugin]))
-    // Префикс ключа и id: `plugin-cards`, `plugin-review`, …
+    // Префикс ключа main-панели и id строки: `plugin-cards`, `plugin-review`, …
     const SHORTCUT_PREFIX = 'plugin-'
-    // id панели «Плагины» (MainPanelId из dsh-client-ui-plugin-manager).
-    const PLUGINS_PANEL_ID = 'plugins'
     // Настройки видимости и закрепления панелей: { visible: string[], pinned: string[] }.
     const PANEL_VISIBILITY_KEY = 'dsh-polish:panel-visibility'
-    // Ключи сервисов, через которые открываются реальные настройки плагина.
-    const PLUGIN_NAVIGATION_SERVICE = 'pluginNavigation'
-    const LAYOUT_SERVICE = 'layout'
+    // Событие для плагинов: по нему они перерегистрируют строку левой панели.
+    const PANELS_CHANGED_EVENT = 'dsh-polish:panels-changed'
 
     /**
      * Цветные эмодзи вместо одноцветных SVG во всей левой панели. Хост рисует
@@ -177,37 +173,18 @@ window.__ModuleLoader__.load({
       panelsInMore: 'In the “More” menu',
       panelsVisibleCount: 'enabled: {count} of {total}',
       panelsVisibilityHint: 'Turn the switch off — the row disappears from both the left sidebar and the “More” menu. Turn it back on — the plugin returns to “More”, where it can be pinned.',
-      shortcutHeading: 'A shortcut panel: a description and a way to the settings',
-      shortcutChip: 'In the left sidebar',
-      shortcutAbout: 'About the plugin',
-      shortcutHint: 'Pin or unpin the panel with the pin button in the left sidebar. Unpinned panels stay in the “More” menu — pin them back there.',
-      shortcutOpening: 'Opening plugin settings…',
-      shortcutOpeningHint: 'The “Plugins” page with the settings of this plugin opens in a moment.',
-      shortcutSettings: 'Open plugin settings',
-      shortcutSettingsFailed: 'could not open the Plugins page',
-      shortcutSettingsHint: 'The “Plugins” page opens: install, update and configure the plugin there.',
+      shortcutHint: 'A panel never disappears for good: unpinned ones wait in the “More” menu, where the “Pin” button brings them back to the left sidebar.',
       'shortcut.cards.title': 'Cards',
-      'shortcut.cards.desc': 'Answer cards in the chat: a dsh-card block with JSON becomes a tidy summary with a title, rows and a list.',
       'shortcut.compact.title': 'Dialog compression',
-      'shortcut.compact.desc': 'Compresses a long dialog into a short summary of the session log: task, what was done, files, commands, questions and errors.',
       'shortcut.review.title': 'Review changes',
-      'shortcut.review.desc': 'A workplace after edits: changed files with a diff, reverting one file, tests, commit with push and a pull request.',
       'shortcut.notify.title': 'Notifications',
-      'shortcut.notify.desc': 'Floating cards about what happens in Harness: a task finished, the agent waits for confirmation, or something failed.',
       'shortcut.team.title': 'Team',
-      'shortcut.team.desc': 'Assembles a task for several helpers: a template, the task description and roles — ready text for the input field.',
       'shortcut.vault.title': 'Vault',
-      'shortcut.vault.desc': 'Tokens, keys and passwords in one encrypted file; the interface shows only counters and the agent gets a value on request.',
       'shortcut.pyrus.title': 'Pyrus: my tasks',
-      'shortcut.pyrus.desc': 'Connects Pyrus to DSH: “My tasks”, opening a task with comments, adding a comment and closing a task.',
       'shortcut.inbox.title': 'Inbox',
-      'shortcut.inbox.desc': 'A Telegram bot for DSH: messages reach the history, and an allowed chat can manage sessions and tasks.',
       'shortcut.polish.title': 'Interface polish',
-      'shortcut.polish.desc': 'One appearance layer for every plugin plus environment checks, a journal and updates on its own page.',
       'shortcut.whale.title': 'Whale helper',
-      'shortcut.whale.desc': 'A little whale in the DSH window: rests while you think, celebrates finished tasks and wakes you up when you get distracted.',
       'shortcut.browser.title': 'Launch browser',
-      'shortcut.browser.desc': 'One click opens Chrome with a separate agent profile and debug port 9222 for the assistant to connect.',
     }
     const ru = {
       reload: 'Обновить',
@@ -270,37 +247,18 @@ window.__ModuleLoader__.load({
       panelsInMore: 'В меню «Ещё»',
       panelsVisibleCount: 'включено: {count} из {total}',
       panelsVisibilityHint: 'Выключите переключатель — строка исчезнет и из левой панели, и из меню «Ещё». Включите обратно — плагин снова появится в «Ещё», откуда его можно закрепить.',
-      shortcutHeading: 'Панель-ярлык плагина: описание и переход к настройкам',
-      shortcutChip: 'В левом меню',
-      shortcutAbout: 'О плагине',
-      shortcutHint: 'Закрепить или открепить панель можно кнопкой-булавкой в левой панели. Откреплённые панели остаются в меню «Ещё» — там их можно вернуть.',
-      shortcutOpening: 'Открываю настройки плагина…',
-      shortcutOpeningHint: 'Сейчас откроется страница «Плагины» с настройками этого плагина.',
-      shortcutSettings: 'Открыть настройки плагина',
-      shortcutSettingsFailed: 'не удалось открыть страницу «Плагины»',
-      shortcutSettingsHint: 'Откроется страница «Плагины»: там плагин можно установить, обновить и настроить.',
+      shortcutHint: 'Панель не пропадает насовсем: откреплённые ждут в меню «Ещё», откуда кнопка «Закрепить» возвращает их в левое меню.',
       'shortcut.cards.title': 'Карточки',
-      'shortcut.cards.desc': 'Ответы-карточки в чате: блок dsh-card с JSON превращается в аккуратную сводку с заголовком, строками и списком.',
       'shortcut.compact.title': 'Сжатие диалога',
-      'shortcut.compact.desc': 'Сжимает длинный диалог в короткую выжимку по журналу сессии: задача, что сделано, файлы, команды, вопросы и ошибки.',
       'shortcut.review.title': 'Ревью изменений',
-      'shortcut.review.desc': 'Рабочее место после правок: изменённые файлы с diff, откат файла, тесты, коммит с push и создание pull request.',
       'shortcut.notify.title': 'Уведомления',
-      'shortcut.notify.desc': 'Всплывающие карточки о том, что происходит в Harness: задача выполнена, агент ждёт подтверждения или что-то упало.',
       'shortcut.team.title': 'Команда',
-      'shortcut.team.desc': 'Собирает задание для нескольких помощников: шаблон, описание задачи и роли — готовый текст для поля ввода.',
       'shortcut.vault.title': 'Сейф',
-      'shortcut.vault.desc': 'Токены, ключи и пароли в одном зашифрованном файле; в интерфейсе видны только счётчики, значения — по запросу агента.',
       'shortcut.pyrus.title': 'Pyrus: мои задачи',
-      'shortcut.pyrus.desc': 'Подключает Pyrus к DSH: «Мои задачи», открытие задачи с комментариями, добавление комментария и закрытие задачи.',
       'shortcut.inbox.title': 'Входящие',
-      'shortcut.inbox.desc': 'Telegram-бот для DSH: сообщения попадают в историю, а разрешённым чатом можно управлять сессиями и задачами.',
       'shortcut.polish.title': 'Оформление интерфейса',
-      'shortcut.polish.desc': 'Общий слой оформления всех плагинов плюс проверки окружения, журнал и обновления на своей странице.',
       'shortcut.whale.title': 'Кит-помощник',
-      'shortcut.whale.desc': 'Маленький кит в окне DSH: отдыхает, пока вы думаете, радуется завершённым задачам и будит, если отвлеклись.',
       'shortcut.browser.title': 'Запуск браузера',
-      'shortcut.browser.desc': 'Один клик открывает Chrome с отдельным профилем агента и портом отладки 9222 для подключения ассистента.',
     }
 
     const CSS = `
@@ -899,9 +857,34 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
       }
     }
 
-    function commitPanelState(next) {
-      panelState = normalizePanelState(next)
-      writePanelState()
+    /**
+     * Сообщить плагинам, что видимость или закрепление изменились.
+     *
+     * Каждый из одиннадцати плагинов сам регистрирует main-панель и строку
+     * `sidebar.panellist`; по этому событию он перерегистрирует или снимает
+     * строку. `detail` — снимок состояния `{ visible, pinned }` (массивы id).
+     */
+    function dispatchPanelsChanged(state) {
+      try {
+        if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return
+        const CustomEventCtor =
+          typeof window.CustomEvent === 'function'
+            ? window.CustomEvent
+            : typeof CustomEvent === 'function'
+              ? CustomEvent
+              : null
+        if (CustomEventCtor === null) return
+        window.dispatchEvent(
+          new CustomEventCtor(PANELS_CHANGED_EVENT, {
+            detail: { visible: [...state.visible], pinned: [...state.pinned] },
+          }),
+        )
+      } catch (error) {
+        console.error('[dsh-polish] событие панелей не отправлено:', error)
+      }
+    }
+
+    function notifyPanelStateListeners() {
       for (const listener of [...panelStateListeners]) {
         try {
           listener(getPanelState())
@@ -909,6 +892,19 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
           console.error('[dsh-polish] подписчик панелей упал:', error)
         }
       }
+    }
+
+    function commitPanelState(next) {
+      panelState = normalizePanelState(next)
+      writePanelState()
+      dispatchPanelsChanged(panelState)
+      notifyPanelStateListeners()
+    }
+
+    /** Перечитать состояние из localStorage и обновить подписчиков без записи. */
+    function adoptPanelStateFromStorage() {
+      panelState = readPanelState()
+      notifyPanelStateListeners()
     }
 
     /** Подписка на изменение видимости/закрепления: возвращает отписку. */
@@ -939,94 +935,39 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
       return SHORTCUT_PLUGINS.filter((plugin) => isPanelVisible(plugin.id) && !isPanelPinned(plugin.id))
     }
 
-    /* --- Динамическая регистрация панелей-ярлыков ------------------------- */
-
-    // id плагина → disposer зарегистрированных main-панели и строки левой панели.
-    const shortcutDisposers = new Map()
-
-    function registerShortcutPanel(ctx, plugin) {
-      if (shortcutDisposers.has(plugin.id)) return
-      const panelId = SHORTCUT_PREFIX + plugin.id
-      const disposers = []
-      try {
-        const dispose = ctx.slots.inject('main', () =>
-          ctx.slots.register({ name: 'main', key: panelId, locale: NS }, createShortcutPage(plugin, ctx)),
-        )
-        if (typeof dispose === 'function') disposers.push(dispose)
-      } catch (error) {
-        console.error('[dsh-polish] панель ' + panelId + ' недоступна:', error)
-      }
-      try {
-        const order = PANEL_ORDER.get(plugin.id)
-        const dispose = ctx.slots.inject('sidebar.panellist', () =>
-          ctx.slots.register(
-            {
-              name: 'sidebar.panellist',
-              id: panelId,
-              order: 20 + order,
-              label: () => translate('shortcut.' + plugin.id + '.title'),
-              locale: NS,
-            },
-            createShortcutIcon(plugin),
-          ),
-        )
-        if (typeof dispose === 'function') disposers.push(dispose)
-      } catch (error) {
-        console.error('[dsh-polish] строка ' + panelId + ' в левой панели недоступна:', error)
-      }
-      shortcutDisposers.set(plugin.id, () => {
-        for (const dispose of disposers.reverse()) {
-          try {
-            dispose()
-          } catch (error) {
-            console.error('[dsh-polish] не удалось снять панель ' + panelId + ':', error)
-          }
-        }
-      })
-    }
-
-    function disposeShortcutPanel(id) {
-      const dispose = shortcutDisposers.get(id)
-      if (dispose === undefined) return
-      shortcutDisposers.delete(id)
-      dispose()
-    }
+    /* --- Управление видимостью и закреплением ------------------------------ */
 
     /**
-     * Показывать или скрыть панель из настроек «Оформления».
-     * Включение регистраций не создаёт: плагин попадает в меню «Ещё», где его
-     * закрепляют кнопкой. Выключение сразу снимает регистрации.
+     * Показывать или скрыть панель плагина из настроек «Оформления».
+     * Включение добавляет id только в `visible` — плагин уходит в меню «Ещё»,
+     * где его закрепляют кнопкой. Выключение убирает id и из `visible`, и из
+     * `pinned`: панель не видна ни в левой панели, ни в «Ещё».
      */
     function setPanelVisible(id, visible) {
       if (!SHORTCUT_BY_ID.has(id)) return getPanelState()
       const visibleIds = panelState.visible.filter((item) => item !== id)
+      const pinnedIds = panelState.pinned.filter((item) => item !== id)
       if (visible) visibleIds.push(id)
-      commitPanelState({ visible: visibleIds, pinned: panelState.pinned.filter((item) => item !== id) })
-      if (!visible) disposeShortcutPanel(id)
+      commitPanelState({ visible: visibleIds, pinned: pinnedIds })
       return getPanelState()
     }
 
-    /** Закрепить нашу панель: регистрирует её и возвращает строку в левую панель. */
-    function pinShortcutPanel(ctx, id) {
-      const plugin = SHORTCUT_BY_ID.get(id)
-      if (plugin === undefined) return false
-      registerShortcutPanel(ctx, plugin)
-      commitPanelState({
-        visible: isPanelVisible(id) ? panelState.visible : [...panelState.visible, id],
-        pinned: [...panelState.pinned.filter((item) => item !== id), id],
-      })
+    /** Закрепить панель плагина: id попадает в `pinned`, плагин возвращает строку. */
+    function pinShortcutPanel(id) {
+      if (!SHORTCUT_BY_ID.has(id)) return false
+      const visibleIds = isPanelVisible(id) ? [...panelState.visible] : [...panelState.visible, id]
+      const pinnedIds = [...panelState.pinned.filter((item) => item !== id), id]
+      commitPanelState({ visible: visibleIds, pinned: pinnedIds })
       return true
     }
 
-    /** «Закрепить все панели (N)»: регистрирует и закрепляет весь список разом. */
-    function pinAllShortcutPanels(ctx, ids) {
+    /** «Закрепить все панели (N)»: все переданные id — в `pinned` одним изменением. */
+    function pinAllShortcutPanels(ids) {
       const visibleIds = [...panelState.visible]
       const pinnedIds = [...panelState.pinned]
       const done = []
       for (const id of Array.isArray(ids) ? ids : []) {
-        const plugin = SHORTCUT_BY_ID.get(id)
-        if (plugin === undefined) continue
-        registerShortcutPanel(ctx, plugin)
+        if (!SHORTCUT_BY_ID.has(id)) continue
         if (!visibleIds.includes(id)) visibleIds.push(id)
         if (!pinnedIds.includes(id)) pinnedIds.push(id)
         done.push(id)
@@ -1681,8 +1622,9 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
 
     /**
      * Карточка «Панели в левом меню»: список одиннадцати плагинов с
-     * переключателем «Показывать в левом меню». Состояние — в localStorage,
-     * регистрации снимаются и возвращаются динамически.
+     * переключателем «Показывать в левом меню». Состояние — в localStorage;
+     * каждое изменение уходит событием `dsh-polish:panels-changed`, и плагины
+     * сами перерегистрируют свою строку в левой панели.
      */
     function PanelsBlock() {
       const t = (key) => translate(key)
@@ -1735,196 +1677,13 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
     }
 
     /**
-     * Открыть страницу «Плагины» из панели-заглушки. Внутри main-панели доступа
-     * к pins нет, зато есть сервис раскладки: `ctx.layout.selectPanel('plugins')`.
-     * @returns {boolean} true, если переход выполнен.
-     */
-    function openPluginsPanel(ctx) {
-      try {
-        const layout = ctx?.layout ?? (typeof ctx?.get === 'function' ? ctx.get(LAYOUT_SERVICE) : undefined)
-        if (layout !== undefined && layout !== null && typeof layout.selectPanel === 'function') {
-          layout.selectPanel(PLUGINS_PANEL_ID)
-          return true
-        }
-      } catch (error) {
-        console.error('[dsh-polish] страница «Плагины» недоступна:', error)
-      }
-      return false
-    }
-
-    /** Сервис навигации по плагинам (`ctx.get('pluginNavigation')`). */
-    function pluginNavigationOf(ctx) {
-      try {
-        const service = typeof ctx?.get === 'function' ? ctx.get(PLUGIN_NAVIGATION_SERVICE) : undefined
-        return service !== undefined && service !== null && typeof service.openBundle === 'function' ? service : null
-      } catch {
-        return null
-      }
-    }
-
-    /** Умеет ли хост открывать детальную страницу плагина. */
-    function hasPluginNavigation(ctx) {
-      return pluginNavigationOf(ctx) !== null
-    }
-
-    /**
-     * Открыть настоящие настройки плагина: сервис `pluginNavigation.openBundle`
-     * показывает панель «Плагины» с детальной страницей пакета — то же, что
-     * видят «Расходы» и «Календарь».
-     * @returns {boolean} true, если переход выполнен.
-     */
-    function openPluginBundle(ctx, packageName) {
-      const navigation = pluginNavigationOf(ctx)
-      if (navigation === null || typeof packageName !== 'string' || packageName === '') return false
-      try {
-        navigation.openBundle(packageName)
-        return true
-      } catch (error) {
-        console.error('[dsh-polish] настройки ' + packageName + ' недоступны:', error)
-        return false
-      }
-    }
-
-    /**
-     * Иконка строки левой панели для плагина без собственной панели: эмодзи
-     * плагина в размер, который просит хост (`size` — 16 в широкой панели,
-     * 18 в свёрнутой). Подпись и выбранное состояние рисует сама левая панель.
-     */
-    function createShortcutIcon(plugin) {
-      return function ShortcutIcon(props) {
-        const requested = Number(props?.size)
-        const size = Number.isFinite(requested) && requested > 0 ? requested : 16
-        return h(
-          'span',
-          {
-            'data-dsh-polish-icon': plugin.id,
-            'aria-hidden': true,
-            style: {
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: size,
-              height: size,
-              fontSize: Math.round(size * 0.95),
-              lineHeight: 1,
-            },
-          },
-          plugin.emoji,
-        )
-      }
-    }
-
-    /**
-     * Панель-ярлык плагина.
-     *
-     * Сразу при монтировании открывает настоящие настройки плагина через сервис
-     * `pluginNavigation.openBundle(packageName)` — то же, что видят «Расходы» и
-     * «Календарь»: панель «Плагины» с детальной страницей пакета. Пока переход
-     * идёт, показывается короткое «Открываю настройки плагина…». Если сервиса в
-     * хосте нет (или он отказал), остаётся прежняя страница-заглушка с кнопкой
-     * «Открыть настройки плагина». Кнопку-булавку внутри страницы не рисуем:
-     * закрепление живёт в левой панели, а откреплённые ждут в меню «Ещё».
-     */
-    function createShortcutPage(plugin, ctx) {
-      const titleKey = 'shortcut.' + plugin.id + '.title'
-      const descKey = 'shortcut.' + plugin.id + '.desc'
-
-      function header(t) {
-        return h(
-          'div',
-          { style: S.header, 'data-dsh-polish-header': 'header' },
-          h('div', { style: S.logo, 'aria-hidden': true }, plugin.emoji),
-          h(
-            'div',
-            { style: S.titles },
-            h('h1', { style: S.heading }, t(titleKey)),
-            h('p', { style: S.subtitle }, t('shortcutHeading')),
-          ),
-          h(
-            'div',
-            { style: S.actions, 'data-dsh-polish-actions': 'actions' },
-            chipNode(t('shortcutChip'), ACCENT),
-          ),
-        )
-      }
-
-      return function ShortcutPage() {
-        const t = (key) => translate(key)
-        const [failed, setFailed] = React.useState(false)
-        const available = hasPluginNavigation(ctx)
-        React.useEffect(() => {
-          if (!available) return undefined
-          if (!openPluginBundle(ctx, plugin.packageName)) setFailed(true)
-          return undefined
-        }, [])
-        if (available && failed !== true) {
-          return h(
-            'div',
-            {
-              style: S.page,
-              'data-dsh-polish-page': 'page',
-              'data-dsh-polish-shortcut': plugin.id,
-              'data-dsh-polish-opening': plugin.id,
-            },
-            h('style', null, PAGE_CSS),
-            header(t),
-            cardSection(
-              'shortcut',
-              t('shortcutOpening'),
-              null,
-              h(
-                'div',
-                { style: S.row, role: 'status', 'aria-live': 'polite' },
-                h('span', { 'aria-hidden': true, style: { fontSize: 16, lineHeight: 1 } }, '⏳'),
-                h('p', { style: S.text }, t('shortcutOpeningHint')),
-              ),
-              h('p', { style: S.hint }, t(descKey)),
-            ),
-          )
-        }
-        const openSettings = () => {
-          setFailed(openPluginsPanel(ctx) !== true)
-        }
-        return h(
-          'div',
-          { style: S.page, 'data-dsh-polish-page': 'page', 'data-dsh-polish-shortcut': plugin.id },
-          h('style', null, PAGE_CSS),
-          header(t),
-          cardSection(
-            'shortcut',
-            t('shortcutAbout'),
-            null,
-            h('p', { style: S.text }, t(descKey)),
-            h('p', { style: S.hint }, t('shortcutHint')),
-            h(
-              'div',
-              { style: S.row },
-              h(
-                'button',
-                {
-                  type: 'button',
-                  style: S.primary,
-                  'data-dsh-polish-button': 'primary',
-                  'data-dsh-polish-open-settings': plugin.id,
-                  onClick: openSettings,
-                },
-                t('shortcutSettings'),
-              ),
-            ),
-            h('p', { style: S.hint }, t('shortcutSettingsHint')),
-            failed === true ? h('p', { style: S.error }, t('shortcutSettingsFailed')) : null,
-          ),
-        )
-      }
-    }
-
-    /**
      * Меню «Ещё» в левой панели: список панелей, которые видны, но не
      * закреплены, с кнопкой «Закрепить» у каждой и общей кнопкой
-     * «Закрепить все панели (N)». Наша панель в списке — из состояния
-     * localStorage; строки хоста (его откреплённые панели) добавляются следом,
-     * без дублей по id. Слот рендерится внутри меню, поэтому после действия
-     * меню закрываем.
+     * «Закрепить все панели (N)». Наши строки берутся из localStorage,
+     * откреплённые панели хоста — из `entries`, без дублей по id.
+     * Закрепление нашей панели меняет localStorage и отправляет событие
+     * `dsh-polish:panels-changed`: строку левой панели вернёт сам плагин.
+     * Слот рендерится внутри меню, поэтому после действия меню закрываем.
      */
     function PanellistActions(props) {
       const t = (key) => translate(key)
@@ -1955,9 +1714,12 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
         }
       }
       const pinRow = (row) => {
-        // Наша панель: регистрируем main-панель и строку левой панели, затем
-        // сообщаем хосту, что она закреплена.
-        if (row.pluginId !== null && row.pluginId !== undefined) pinShortcutPanel(pluginCtx, row.pluginId)
+        // Наша панель: пишем pinned в localStorage и отправляем событие —
+        // строку левой панели вернёт сам плагин.
+        if (row.pluginId !== null && row.pluginId !== undefined) {
+          pinShortcutPanel(row.pluginId)
+          return
+        }
         if (typeof props?.onPinnedChange !== 'function') return
         try {
           props.onPinnedChange(row.id, true)
@@ -1970,7 +1732,20 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
         dismiss()
       }
       const pinAll = () => {
-        for (const row of rows) pinRow(row)
+        // Наши видимые панели закрепляются одним изменением и одним событием.
+        const ours = rows
+          .filter((row) => row.pluginId !== null && row.pluginId !== undefined)
+          .map((row) => row.pluginId)
+        if (ours.length > 0) pinAllShortcutPanels(ours)
+        for (const row of rows) {
+          if (row.pluginId !== null && row.pluginId !== undefined) continue
+          if (typeof props?.onPinnedChange !== 'function') continue
+          try {
+            props.onPinnedChange(row.id, true)
+          } catch (error) {
+            console.error('[dsh-polish] не удалось закрепить панель:', error)
+          }
+        }
         dismiss()
       }
       if (rows.length === 0) {
@@ -2127,8 +1902,6 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
     }
 
     let translate = (key) => key
-    // Контекст плагина: нужен динамическим регистрациям из настроек и меню «Ещё».
-    let pluginCtx = null
 
     /** Журнал: что проверяли и исправляли в последнее время. */
     function JournalBlock() {
@@ -2384,22 +2157,142 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
       return h(PolishPage, props)
     }
 
+    /* --- Своя панель «Оформление интерфейса» ------------------------------- */
+
+    // dsh-polish — один из одиннадцати плагинов с панелью: main-панель с ключом
+    // `plugin-polish` он регистрирует сам (как и остальные плагины), а строку
+    // левой панели — только когда id `polish` закреплён в общем состоянии.
+    const POLISH_PANEL_ID = SHORTCUT_PREFIX + 'polish'
+    const POLISH_SIDEBAR_ORDER = 28
+    // Disposer зарегистрированной строки sidebar.panellist (null — строки нет).
+    let polishSidebarDispose = null
+
+    /** Иконка своей строки: 🎨 в размер, который просит хост (16/18 px). */
+    function PolishPanelIcon(props) {
+      const requested = Number(props?.size)
+      const size = Number.isFinite(requested) && requested > 0 ? requested : 16
+      return h(
+        'span',
+        {
+          'data-dsh-polish-icon': 'polish',
+          'aria-hidden': true,
+          style: {
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: size,
+            height: size,
+            fontSize: Math.round(size * 0.95),
+            lineHeight: 1,
+          },
+        },
+        '🎨',
+      )
+    }
+
+    /** Своя main-панель: страница настроек «Оформления». Регистрируется всегда. */
+    function registerPolishMainPanel(ctx) {
+      try {
+        ctx.slots.inject('main', () =>
+          ctx.slots.register({ name: 'main', key: POLISH_PANEL_ID, locale: NS }, PolishPage),
+        )
+      } catch (error) {
+        console.error('[dsh-polish] своя main-панель недоступна:', error)
+      }
+    }
+
+    /** Снять свою строку левой панели (если она была). */
+    function disposePolishSidebar() {
+      const dispose = polishSidebarDispose
+      if (dispose === null) return
+      polishSidebarDispose = null
+      try {
+        if (typeof dispose === 'function') dispose()
+      } catch (error) {
+        console.error('[dsh-polish] не удалось снять строку своей панели:', error)
+      }
+    }
+
     /**
-     * Зарегистрировать панели-ярлыки для плагинов, которые видны и закреплены.
-     * Ключ main-панели и id строки — `plugin-<id>`; они обязаны совпадать, иначе
-     * строка не откроет панель. Выключенные и незакреплённые панели не
-     * регистрируются: первые не видны нигде, вторые ждут в меню «Ещё».
+     * Привести свою строку левой панели в соответствие с состоянием:
+     * закреплён `polish` — строка есть, иначе её нет. Повторные вызовы без
+     * изменений ничего не делают.
      */
-    function applyShortcutPanels(ctx) {
-      shortcutDisposers.clear()
-      for (const plugin of SHORTCUT_PLUGINS) {
-        if (!isPanelVisible(plugin.id) || !isPanelPinned(plugin.id)) continue
-        registerShortcutPanel(ctx, plugin)
+    function syncPolishSidebar(ctx) {
+      if (!isPanelPinned('polish')) {
+        disposePolishSidebar()
+        return
+      }
+      if (polishSidebarDispose !== null) return
+      try {
+        polishSidebarDispose = ctx.slots.inject('sidebar.panellist', () =>
+          ctx.slots.register(
+            {
+              name: 'sidebar.panellist',
+              id: POLISH_PANEL_ID,
+              order: POLISH_SIDEBAR_ORDER,
+              label: () => translate('shortcut.polish.title'),
+              locale: NS,
+            },
+            PolishPanelIcon,
+          ),
+        )
+      } catch (error) {
+        polishSidebarDispose = null
+        console.error('[dsh-polish] строка своей панели недоступна:', error)
+      }
+    }
+
+    /**
+     * Своя панель: main регистрируется всегда, строка — по `pinned`.
+     * Реагируем на событие `dsh-polish:panels-changed` (другие плагины и наша
+     * страница настроек шлют его после изменения состояния) и на `storage`
+     * (изменение из другой вкладки): перечитываем localStorage и
+     * перерегистрируем строку. main не трогаем.
+     */
+    function installPolishPanel(ctx) {
+      registerPolishMainPanel(ctx)
+      syncPolishSidebar(ctx)
+
+      const onPanelsChanged = () => {
+        adoptPanelStateFromStorage()
+        syncPolishSidebar(ctx)
+      }
+      const onStorage = (event) => {
+        const key = event?.key
+        if (key !== null && key !== undefined && key !== PANEL_VISIBILITY_KEY) return
+        adoptPanelStateFromStorage()
+        syncPolishSidebar(ctx)
+      }
+      try {
+        if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+          window.addEventListener(PANELS_CHANGED_EVENT, onPanelsChanged)
+          window.addEventListener('storage', onStorage)
+        }
+      } catch (error) {
+        console.error('[dsh-polish] подписка на событие панелей недоступна:', error)
+      }
+      try {
+        ctx.effect(
+          () => () => {
+            try {
+              if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+                window.removeEventListener(PANELS_CHANGED_EVENT, onPanelsChanged)
+                window.removeEventListener('storage', onStorage)
+              }
+            } catch {
+              // вне браузера снимать нечего
+            }
+            disposePolishSidebar()
+          },
+          'dsh-polish: own panel',
+        )
+      } catch (error) {
+        console.error('[dsh-polish] очистка своей панели недоступна:', error)
       }
     }
 
     function apply(ctx) {
-      pluginCtx = ctx
       const locale = ctx.locale
       locale.register(NS, { en, ru })
       translate = locale.bind(NS)
@@ -2477,15 +2370,16 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
         console.error('[dsh-polish] секция страницы недоступна:', error)
       }
 
-      // Панели-ярлыки: зарегистрированы только видимые и закреплённые.
-      applyShortcutPanels(ctx)
-
       // Цветные эмодзи вместо одноцветных SVG у всех панелей левой панели.
       applyPanelEmoji(ctx)
+
+      // Своя панель «Оформление интерфейса» по тому же контракту: main всегда,
+      // строка — только когда id `polish` закреплён.
+      installPolishPanel(ctx)
     }
 
     exports.apply = apply
-    exports.inject = ['slots', 'locale', 'layout']
+    exports.inject = ['slots', 'locale']
     exports.NS = NS
     return module.exports
   },
