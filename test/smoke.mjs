@@ -101,6 +101,14 @@ class FakeElement {
     else delete this.attrs[name]
   }
 
+  querySelectorAll(selector) {
+    const found = []
+    walk(this, (node) => {
+      if (node !== this && matches(node, selector)) found.push(node)
+    })
+    return found
+  }
+
   addEventListener(type, handler) {
     ;(this.listeners[type] ??= []).push(handler)
   }
@@ -119,11 +127,25 @@ const hasClass = (element, name) => String(element?.className ?? '').split(/\s+/
 
 function matches(node, selector) {
   if (selector.includes('style[data-plugin')) return node.tagName === 'STYLE' && node.dataset.plugin === 'dsh-polish'
+  if (selector === 'nav') return node.tagName === 'NAV'
+  if (selector === 'button') return node.tagName === 'BUTTON'
+  if (selector === 'svg') return node.tagName === 'SVG'
+  if (selector === 'nav button') return node.tagName === 'BUTTON' && hasAncestorTag(node, 'NAV')
+  if (selector === '[data-dsh-panel-emoji]') return node.attrs['data-dsh-panel-emoji'] !== undefined
   if (selector === '[data-detail-document]') return node.attrs['data-detail-document'] !== undefined
   if (selector === '[data-dsh-polish-desc]') return node.attrs['data-dsh-polish-desc'] !== undefined
   if (selector === '[data-dsh-polish-doc]') return node.attrs['data-dsh-polish-doc'] !== undefined
   if (selector.includes('detailTitle')) return String(node.className).includes('detailTitle')
   if (selector.includes('detailDesc')) return String(node.className).includes('detailDesc')
+  return false
+}
+
+function hasAncestorTag(node, tag) {
+  let current = node?.parentElement
+  while (current !== null && current !== undefined) {
+    if (current.tagName === tag) return true
+    current = current.parentElement
+  }
   return false
 }
 
@@ -242,6 +264,85 @@ detailSections.appendChild(configSection)
 pageRoot.appendChild(detailMain)
 pageRoot.appendChild(detailSections)
 bodyElement.appendChild(pageRoot)
+
+/* --- Левая панель: строки с одноцветными SVG, как в реальном DSH ---------- */
+// Хост рисует строку как button.panelRow[aria-label] > span.panelGlyph > svg.
+const navElement = new FakeElement('nav')
+bodyElement.appendChild(navElement)
+const panelRows = []
+
+function makePanelRow(label, options = {}) {
+  const button = new FakeElement('button')
+  button.setAttribute('type', 'button')
+  button.setAttribute('aria-label', label)
+  let glyph = null
+  if (options.noGlyph !== true) {
+    glyph = new FakeElement('span')
+    glyph.className = 'wtg9ga_panelGlyph'
+    glyph.setAttribute('aria-hidden', 'true')
+    if (typeof options.emoji === 'string') {
+      const emoji = new FakeElement('span')
+      emoji.textContent = options.emoji
+      glyph.appendChild(emoji)
+    }
+    if (options.emoji === undefined && options.svg !== false) glyph.appendChild(new FakeElement('svg'))
+    button.appendChild(glyph)
+  }
+  navElement.appendChild(button)
+  panelRows.push({ button, glyph, label })
+  return button
+}
+
+// Карта меток ru/en: каждая кнопка должна получить свой эмодзи.
+const PANEL_EMOJI_CASES = [
+  ['Плагины', '🧩'],
+  ['Plugins', '🧩'],
+  ['Календарь', '📅'],
+  ['Calendar', '📅'],
+  ['Расходы', '💰'],
+  ['Expenses', '💰'],
+  ['Синхронизация сессий', '🔄'],
+  ['Session sync', '🔄'],
+  ['Задачи автоматизации', '⏰'],
+  ['Automation tasks', '⏰'],
+  ['Карточки', '🧩'],
+  ['Cards', '🧩'],
+  ['Сжатие диалога', '🗜️'],
+  ['Dialog compaction', '🗜️'],
+  ['Ревью изменений', '🔍'],
+  ['Changes review', '🔍'],
+  ['Уведомления', '🔔'],
+  ['Notifications', '🔔'],
+  ['Команда', '👥'],
+  ['Team', '👥'],
+  ['Сейф', '🔑'],
+  ['Vault', '🔑'],
+  ['Pyrus: мои задачи', '📋'],
+  ['Pyrus: my tasks', '📋'],
+  ['Входящие', '📥'],
+  ['Inbox', '📥'],
+  ['Оформление интерфейса', '🎨'],
+  ['Appearance', '🎨'],
+  ['Кит-помощник', '🐳'],
+  ['Whale Companion', '🐳'],
+  ['Запуск браузера', '🌐'],
+  ['Browser', '🌐'],
+]
+const panelEmojiButtons = PANEL_EMOJI_CASES.map(([label]) => makePanelRow(label))
+// Кнопки, которые трогать нельзя: чужая метка, уже эмодзи, нет глифа, нет svg.
+const untouchedForeign = makePanelRow('Ещё')
+const untouchedEmoji = makePanelRow('Карточки', { emoji: '🧩' })
+const untouchedNoGlyph = makePanelRow('Плагины', { noGlyph: true })
+const untouchedNoSvg = makePanelRow('Плагины', { svg: false })
+// Метка с другим регистром и неразрывным пробелом — нормализуется и помечается.
+const panelCaseButton = makePanelRow('  ПЛАГИНЫ  ')
+const panelNbspButton = makePanelRow('Синхронизация\u00a0сессий')
+// Текст внутри SVG (title) не должен мешать считать иконку одноцветной.
+const panelSvgTitleButton = makePanelRow('Команда')
+const panelSvgTitleSvg = panelSvgTitleButton.querySelectorAll('svg')[0]
+const panelSvgTitleNode = new FakeElement('title')
+panelSvgTitleNode.textContent = 'Команда'
+panelSvgTitleSvg.appendChild(panelSvgTitleNode)
 
 const registrations = []
 const effects = []
@@ -454,6 +555,18 @@ assert.match(css, /\[class\*="detailDesc"\]\.is-open > \.dsh-polish-desc-body/)
 assert.match(css, /\[data-detail-document\]\.dsh-polish-doc-hidden/)
 assert.match(css, /display: none !important/)
 
+// Цветные эмодзи-иконки левой панели: скрыть svg, показать ::before из атрибута.
+assert.match(css, /nav button\[data-dsh-panel-emoji\] \[class\*="panelGlyph"\] svg/, 'правило скрывает svg у помеченной панели')
+assert.match(css, /content: attr\(data-dsh-panel-emoji\)/, '::before берёт эмодзи из data-атрибута')
+assert.match(
+  css,
+  /font-family: "Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", sans-serif/,
+  'цветной эмодзи-шрифт',
+)
+assert.match(css, /font-size: 17px/, 'эмодзи 17 px в раскрытой панели')
+assert.match(css, /\[class\*="collapsed"\] nav button\[data-dsh-panel-emoji\]/, 'правило для свёрнутой панели')
+assert.match(css, /font-size: 18px/, 'эмодзи 18 px в свёрнутой панели')
+
 /* --- Глобальное выравнивание длинных абзацев ----------------------------- */
 
 const justifyMatch = css.match(/:is\([^{}]*\):not\([^{}]*\)\s*\{[^}]*\}/)
@@ -553,6 +666,74 @@ assert.equal(descElement.childNodes.filter((node) => hasClass(node, 'dsh-polish-
 assert.equal(docSection.previousElementSibling, docBarAtStart, 'строка документа не задублирована')
 assert.equal(detailSections.childNodes.filter((node) => hasClass(node, 'dsh-polish-desc-bar')).length, 1)
 
+/* --- Цветные эмодзи во всей левой панели -------------------------------- */
+
+const PANEL_EMOJI_ATTR = 'data-dsh-panel-emoji'
+assert.equal(panelEmojiButtons.length, PANEL_EMOJI_CASES.length)
+for (const [index, [label, emoji]] of PANEL_EMOJI_CASES.entries()) {
+  const row = panelRows[index]
+  assert.equal(row.button.getAttribute('aria-label'), label, `${label}: aria-label не тронут`)
+  assert.equal(row.button.getAttribute(PANEL_EMOJI_ATTR), emoji, `${label}: эмодзи на кнопке`)
+  assert.equal(row.glyph.getAttribute(PANEL_EMOJI_ATTR), emoji, `${label}: атрибут для ::before на глифе`)
+  assert.ok(
+    row.glyph.childNodes.some((node) => node.tagName === 'SVG'),
+    `${label}: svg остаётся в DOM, его скрывает CSS`,
+  )
+}
+assert.equal(panelCaseButton.getAttribute(PANEL_EMOJI_ATTR), '🧩', 'регистр и пробелы нормализуются')
+assert.equal(panelNbspButton.getAttribute(PANEL_EMOJI_ATTR), '🔄', 'неразрывный пробел нормализуется')
+assert.equal(panelSvgTitleButton.getAttribute(PANEL_EMOJI_ATTR), '👥', 'title внутри svg не мешает замене')
+assert.equal(untouchedForeign.getAttribute(PANEL_EMOJI_ATTR), null, 'метка не из карты — не трогаем')
+assert.equal(untouchedEmoji.getAttribute(PANEL_EMOJI_ATTR), null, 'внутри уже эмодзи-компонент — не трогаем')
+assert.equal(untouchedNoGlyph.getAttribute(PANEL_EMOJI_ATTR), null, 'нет span.panelGlyph — не трогаем')
+assert.equal(untouchedNoSvg.getAttribute(PANEL_EMOJI_ATTR), null, 'в глифе нет svg — не трогаем')
+
+// Observer следит именно за nav, а не за всем документом.
+const panelObserver = observers.find((item) =>
+  item.targets.some((entry) => entry.target === navElement),
+)
+assert.ok(panelObserver !== undefined, 'MutationObserver подключён к левой панели')
+assert.ok(
+  panelObserver.targets.some(
+    (entry) =>
+      entry.options?.childList === true &&
+      entry.options?.subtree === true &&
+      entry.options?.attributeFilter?.includes('aria-label'),
+  ),
+  'observer видит перерисовки и смену aria-label',
+)
+
+// Перерисовка любой панели: новая кнопка помечается по колбэку observer.
+const addedButton = makePanelRow('Календарь')
+panelObserver.callback()
+assert.equal(addedButton.getAttribute(PANEL_EMOJI_ATTR), '📅', 'новая кнопка после перерисовки')
+
+// Смена языка: эмодзи остаётся, а чужая метка снимает атрибут.
+const pluginsRow = panelRows[0]
+pluginsRow.button.setAttribute('aria-label', 'Plugins')
+panelObserver.callback()
+assert.equal(pluginsRow.button.getAttribute(PANEL_EMOJI_ATTR), '🧩', 'en-метка после смены языка')
+pluginsRow.button.setAttribute('aria-label', 'Неизвестная панель')
+panelObserver.callback()
+assert.equal(pluginsRow.button.getAttribute(PANEL_EMOJI_ATTR), null, 'неизвестная метка снимает атрибут')
+assert.equal(pluginsRow.glyph.getAttribute(PANEL_EMOJI_ATTR), null, 'атрибут глифа тоже снят')
+pluginsRow.button.setAttribute('aria-label', 'Плагины')
+panelObserver.callback()
+assert.equal(pluginsRow.button.getAttribute(PANEL_EMOJI_ATTR), '🧩', 'возврат ru-метки')
+
+// React пересоздал svg-глиф: атрибут для ::before ставится на новый узел.
+const expensesRow = panelRows[4]
+const newGlyph = new FakeElement('span')
+newGlyph.className = 'wtg9ga_panelGlyph'
+newGlyph.setAttribute('aria-hidden', 'true')
+newGlyph.appendChild(new FakeElement('svg'))
+expensesRow.button.removeChild(expensesRow.glyph)
+expensesRow.button.appendChild(newGlyph)
+expensesRow.glyph = newGlyph
+panelObserver.callback()
+assert.equal(newGlyph.getAttribute(PANEL_EMOJI_ATTR), '💰', 'новый глиф получает эмодзи-атрибут')
+assert.equal(newGlyph.childNodes.length, 1, 'svg не удаляется из DOM')
+
 /* --- Отключение оформления возвращает исходную разметку ------------------ */
 
 assert.equal(typeof cleanups[1], 'function', 'у слоя описания есть cleanup')
@@ -566,6 +747,20 @@ assert.equal(docSection.previousElementSibling, null, 'строка докуме
 assert.equal(hasClass(docSection, 'dsh-polish-doc-hidden'), false, 'скрывающий класс снят')
 assert.equal(getComputedStyle(docSection).display, 'block', 'документ виден как был')
 assert.equal(detailSections.childNodes.length, 2, 'секции не сломаны: документ и конфиг')
+
+/* --- Выключение оформления снимает эмодзи-иконки ------------------------ */
+
+const panelEmojiCleanup = cleanups[3]
+assert.equal(typeof panelEmojiCleanup, 'function', 'у эмодзи-эффекта есть cleanup')
+panelEmojiCleanup()
+assert.equal(panelObserver.active, false, 'MutationObserver левой панели отключён')
+for (const row of panelRows) {
+  assert.equal(row.button.getAttribute(PANEL_EMOJI_ATTR), null, 'атрибут кнопки снят')
+  assert.equal(typeof row.button.getAttribute('aria-label'), 'string', 'aria-label не тронут')
+}
+for (const row of panelRows) {
+  if (row.glyph !== null) assert.equal(row.glyph.getAttribute(PANEL_EMOJI_ATTR), null, 'атрибут глифа снят')
+}
 
 // карточка рендерится без ошибок
 const wrapper = sectionRegistration.component({ subject: { kind: 'bundle', pkg: { name: 'dsh-polish' } } })
@@ -707,3 +902,4 @@ console.log('  документ:', 'скрыт data-detail-document, без ду
 console.log('  страница:', 'maxWidth 960, шапка 🎨, чип, «Обновить», карточек:', cards.length, ', адаптив')
 console.log('  выравнивание:', 'text-align justify + hyphens auto; код, таблицы и списки исключены')
 console.log('  панели:', '11 main + 11 sidebar.panellist (plugin-<id>), список откреплённых, «Закрепить все панели (N)»')
+console.log('  эмодзи-иконки:', PANEL_EMOJI_CASES.length, 'меток ru/en, data-dsh-panel-emoji на nav, observer и cleanup')

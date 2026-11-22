@@ -58,6 +58,58 @@ window.__ModuleLoader__.load({
     // id панели «Плагины» (MainPanelId из dsh-client-ui-plugin-manager).
     const PLUGINS_PANEL_ID = 'plugins'
 
+    /**
+     * Цветные эмодзи вместо одноцветных SVG во всей левой панели. Хост рисует
+     * строку как `button.panelRow[aria-label] > span.panelGlyph > svg`, где
+     * подпись — локализованное название панели. Ищем кнопку по aria-label,
+     * ставим ей `data-dsh-panel-emoji`, а CSS скрывает svg и рисует эмодзи
+     * через `::before`. Ключи карты — aria-label без регистра и лишних пробелов.
+     */
+    const PANEL_EMOJI_ATTR = 'data-dsh-panel-emoji'
+    const PANEL_EMOJI_BY_LABEL = {
+      плагины: '🧩',
+      plugins: '🧩',
+      календарь: '📅',
+      calendar: '📅',
+      расходы: '💰',
+      expenses: '💰',
+      'синхронизация сессий': '🔄',
+      'session sync': '🔄',
+      'sessions sync': '🔄',
+      'session synchronization': '🔄',
+      'задачи автоматизации': '⏰',
+      'automation tasks': '⏰',
+      карточки: '🧩',
+      cards: '🧩',
+      'сжатие диалога': '🗜️',
+      'dialog compaction': '🗜️',
+      'dialog compression': '🗜️',
+      'ревью изменений': '🔍',
+      'changes review': '🔍',
+      'review changes': '🔍',
+      уведомления: '🔔',
+      notifications: '🔔',
+      команда: '👥',
+      team: '👥',
+      сейф: '🔑',
+      vault: '🔑',
+      'pyrus: мои задачи': '📋',
+      'pyrus: my tasks': '📋',
+      pyrus: '📋',
+      входящие: '📥',
+      inbox: '📥',
+      'оформление интерфейса': '🎨',
+      appearance: '🎨',
+      'interface polish': '🎨',
+      'кит-помощник': '🐳',
+      'whale companion': '🐳',
+      whale: '🐳',
+      'запуск браузера': '🌐',
+      browser: '🌐',
+      'launch browser': '🌐',
+      'agent browser launcher': '🌐',
+    }
+
     const en = {
       title: 'Interface polish',
       heading: 'Appearance of all plugins',
@@ -386,6 +438,27 @@ select option:checked {
   text-align: justify;
   hyphens: auto;
   text-justify: inter-word;
+}
+
+/* Левая панель: цветные эмодзи-иконки вместо одноцветных SVG.
+   Атрибут стоит и на кнопке панели, и на её span.panelGlyph: content: attr()
+   в ::before читается с самого глифа, поэтому значение дублируется. */
+nav button[data-dsh-panel-emoji] [class*="panelGlyph"] svg {
+  display: none !important;
+}
+nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
+  content: attr(data-dsh-panel-emoji);
+  font-family: "Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", sans-serif;
+  font-size: 17px;
+  font-style: normal;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+/* Свёрнутая левая панель: иконка чуть крупнее, как у штатных SVG. */
+[class*="collapsed"] nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
+  font-size: 18px;
 }
 `
 
@@ -806,6 +879,184 @@ select option:checked {
         }, 'dsh-polish: styles')
       } catch (error) {
         console.error('[dsh-polish] стили недоступны:', error)
+      }
+    }
+
+    /* --- Цветные эмодзи-иконки левой панели --------------------------------- */
+
+    /** Ключ карты меток: без регистра, лишних пробелов и неразрывных пробелов. */
+    function panelEmojiKey(label) {
+      return String(label ?? '')
+        .replace(/[\u00a0\u2007\u202f]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLowerCase()
+    }
+
+    /** Эмодзи для aria-label панели или null, если метка не наша. */
+    function emojiForPanelLabel(label) {
+      const key = panelEmojiKey(label)
+      if (key === '') return null
+      return Object.hasOwn(PANEL_EMOJI_BY_LABEL, key) ? PANEL_EMOJI_BY_LABEL[key] : null
+    }
+
+    function isElementNode(node) {
+      return node !== null && node !== undefined && node.nodeType === 1
+    }
+
+    function tagOf(node) {
+      return String(node?.tagName ?? '').toUpperCase()
+    }
+
+    /** Первый потомок с классом, содержащим `panelGlyph` (хост хеширует имена). */
+    function panelGlyphOf(node) {
+      for (const child of childNodesOf(node)) {
+        if (!isElementNode(child)) continue
+        if (String(child.className ?? '').includes('panelGlyph')) return child
+        const nested = panelGlyphOf(child)
+        if (nested !== null) return nested
+      }
+      return null
+    }
+
+    /** Есть ли внутри иконки SVG (одноцветный глиф хоста или плагина). */
+    function hasSvgGlyph(node) {
+      for (const child of childNodesOf(node)) {
+        if (!isElementNode(child)) continue
+        if (tagOf(child) === 'SVG') return true
+        if (hasSvgGlyph(child)) return true
+      }
+      return false
+    }
+
+    /** Свой текст внутри глифа: иконка уже текстовая или эмодзи — не вмешиваемся. */
+    function hasOwnText(node) {
+      if (node === null || node === undefined) return false
+      if (node.nodeType === 3) return String(node.nodeValue ?? '').trim() !== ''
+      // Текст внутри SVG (title, desc) — не повод считать иконку текстовой.
+      if (tagOf(node) === 'SVG') return false
+      const children = childNodesOf(node)
+      if (children.length === 0) {
+        return isElementNode(node) && String(node.textContent ?? '').trim() !== ''
+      }
+      for (const child of children) {
+        if (hasOwnText(child)) return true
+      }
+      return false
+    }
+
+    /**
+     * Пометка одной кнопки левой панели. Возвращает true, если эмодзи стоит.
+     * aria-label и обработчики не трогаем: только data-атрибуты.
+     */
+    function markPanelButton(button) {
+      if (!isElementNode(button) || tagOf(button) !== 'BUTTON') return false
+      const emoji = emojiForPanelLabel(typeof button.getAttribute === 'function' ? button.getAttribute('aria-label') : null)
+      const glyph = panelGlyphOf(button)
+      const eligible = emoji !== null && glyph !== null && hasSvgGlyph(glyph) && !hasOwnText(glyph)
+      if (!eligible) {
+        if (button.getAttribute?.(PANEL_EMOJI_ATTR) !== null && button.getAttribute?.(PANEL_EMOJI_ATTR) !== undefined) {
+          button.removeAttribute(PANEL_EMOJI_ATTR)
+        }
+        if (glyph !== null && glyph.getAttribute?.(PANEL_EMOJI_ATTR) !== null) {
+          glyph.removeAttribute(PANEL_EMOJI_ATTR)
+        }
+        return false
+      }
+      if (button.getAttribute?.(PANEL_EMOJI_ATTR) !== emoji) button.setAttribute(PANEL_EMOJI_ATTR, emoji)
+      // content: attr() в ::before читает атрибут с самого span.panelGlyph.
+      if (glyph.getAttribute?.(PANEL_EMOJI_ATTR) !== emoji) glyph.setAttribute(PANEL_EMOJI_ATTR, emoji)
+      return true
+    }
+
+    function panelButtonsOf(nav) {
+      if (nav !== null && nav !== undefined && typeof nav.querySelectorAll === 'function') {
+        try {
+          return Array.from(nav.querySelectorAll('button'))
+        } catch {
+          // ниже попробуем документ
+        }
+      }
+      try {
+        return Array.from(document.querySelectorAll('nav button'))
+      } catch {
+        return []
+      }
+    }
+
+    function clearPanelEmoji() {
+      try {
+        for (const element of Array.from(document.querySelectorAll('[' + PANEL_EMOJI_ATTR + ']'))) {
+          if (typeof element.removeAttribute === 'function') element.removeAttribute(PANEL_EMOJI_ATTR)
+        }
+      } catch {
+        // вне браузера снимать нечего
+      }
+    }
+
+    /**
+     * Глобальный эффект: одна MutationObserver на левую панель (или на body,
+     * пока панели нет — плагин грузится на старте приложения), первичный
+     * проход и повторная пометка после перерисовок и смены языка. При
+     * выключении оформления атрибуты снимаются, observer отключается.
+     */
+    function applyPanelEmoji(ctx) {
+      try {
+        ctx.effect(() => {
+          if (!isEnabled()) {
+            clearPanelEmoji()
+            return () => {}
+          }
+          let observer = null
+          let observed = null
+
+          const pass = () => {
+            let nav = null
+            try {
+              nav = document.querySelector('nav')
+            } catch {
+              nav = null
+            }
+            const root = nav ?? (typeof document.body !== 'undefined' ? document.body : null)
+            for (const button of panelButtonsOf(nav)) markPanelButton(button)
+            if (root === null || root === observed) return
+            if (observer !== null) {
+              try {
+                observer.disconnect()
+              } catch {
+                // уже отключён
+              }
+            }
+            observed = root
+            try {
+              observer = new MutationObserver(() => pass())
+              observer.observe(root, {
+                childList: true,
+                subtree: true,
+                attributes: true,
+                attributeFilter: ['aria-label'],
+              })
+            } catch {
+              observer = null
+            }
+          }
+
+          pass()
+          return () => {
+            if (observer !== null) {
+              try {
+                observer.disconnect()
+              } catch {
+                // уже отключён
+              }
+            }
+            observer = null
+            observed = null
+            clearPanelEmoji()
+          }
+        }, 'dsh-polish: panel emoji')
+      } catch (error) {
+        console.error('[dsh-polish] эмодзи-иконки левой панели недоступны:', error)
       }
     }
 
@@ -1898,6 +2149,9 @@ select option:checked {
 
       // Любой наш плагин — строка в левой панели: закрепить можно любой.
       applyShortcutPanels(ctx)
+
+      // Цветные эмодзи вместо одноцветных SVG у всех панелей левой панели.
+      applyPanelEmoji(ctx)
     }
 
     exports.apply = apply
