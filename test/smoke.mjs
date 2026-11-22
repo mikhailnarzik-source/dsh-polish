@@ -217,7 +217,12 @@ globalThis.MutationObserver = class {
 const React = {
   createElement: (type, props, ...children) => ({ type, props, children }),
   useState: (initial) => [typeof initial === 'function' ? initial() : initial, () => {}],
-  useEffect: () => {},
+  // Эффект выполняется сразу: тесты проверяют монтирование ShortcutPage без
+  // настоящего React-планировщика.
+  useEffect: (fn) => {
+    const cleanup = fn()
+    return typeof cleanup === 'function' ? cleanup : undefined
+  },
 }
 
 const modules = { react: React }
@@ -347,11 +352,19 @@ panelSvgTitleSvg.appendChild(panelSvgTitleNode)
 const registrations = []
 const effects = []
 const selections = []
+const openBundleCalls = []
+const pluginNavigation = {
+  openList: () => {},
+  openBundle: (packageName) => { openBundleCalls.push(packageName) },
+}
+// «Сервисы» хоста: в fallback-тесте pluginNavigation убираем.
+const services = { pluginNavigation }
 let boundNs = ''
 let dict = {}
 let registeredLocales = {}
 const ctx = {
   effect: (fn) => { effects.push(fn) },
+  get: (name) => services[name],
   layout: {
     selectPanel: (id) => { selections.push(id) },
   },
@@ -365,8 +378,20 @@ const ctx = {
     subscribe: () => () => {},
   },
   slots: {
-    inject: (name, register) => { register() },
-    register: (options, component) => { registrations.push({ options, component }) },
+    inject: (name, register) => {
+      const dispose = register()
+      return () => {
+        if (typeof dispose === 'function') dispose()
+      }
+    },
+    register: (options, component) => {
+      const record = { options, component }
+      registrations.push(record)
+      return () => {
+        const index = registrations.indexOf(record)
+        if (index >= 0) registrations.splice(index, 1)
+      }
+    },
   },
 }
 
@@ -378,40 +403,54 @@ assert.ok(registrations.length >= 1, 'есть регистрации слото
 const sectionRegistration = registrations.find((item) => item.options.name === 'plugins.detail.section')
 assert.ok(sectionRegistration !== undefined, 'секция страницы плагина зарегистрирована')
 assert.equal(typeof registrations[0].component, 'function')
+// По умолчанию все панели видны и закреплены: состояние не пишется до первого
+// изменения, а панели регистрируются сразу.
+const PANEL_VISIBILITY_KEY = 'dsh-polish:panel-visibility'
+assert.equal(storage.has(PANEL_VISIBILITY_KEY), false, 'состояние по умолчанию не пишется в localStorage')
 
-/* --- Меню «Ещё»: список откреплённых панелей и «Закрепить все панели (N)» --- */
+/* --- Меню «Ещё»: видимые-но-не-закреплённые панели ----------------------- */
 
 const panelActionsRegistration = registrations.find((item) => item.options.name === 'sidebar.panellist.actions')
 assert.ok(panelActionsRegistration !== undefined, 'слот sidebar.panellist.actions зарегистрирован')
 assert.equal(panelActionsRegistration.options.id, 'dsh-polish-panellist-actions')
 assert.equal(typeof panelActionsRegistration.component, 'function')
+
+// По умолчанию все одиннадцать панелей закреплены: закреплять нечего.
+const emptyMenu = panelActionsRegistration.component({
+  entries: [],
+  onPinnedChange() { throw new Error('закреплять нечего') },
+  onDismiss() {},
+})
+assert.notEqual(emptyMenu, null, 'подсказка вместо пустого меню')
+assert.equal(emptyMenu.props['data-dsh-polish-panellist-actions'], 'list')
+assert.equal(emptyMenu.children[0].props['data-dsh-polish-panellist-title'], 'unpinned', 'заголовок списка')
+assert.match(JSON.stringify(emptyMenu.children[0]), /Откреплённые панели/, 'подпись «Откреплённые панели»')
+assert.match(JSON.stringify(emptyMenu), /Все панели уже в левом меню/, 'подсказка, когда закреплять нечего')
 assert.equal(
-  panelActionsRegistration.component({ entries: [], onOpen() {}, onPinnedChange() {}, onDismiss() {} }),
-  null,
-  'без панелей блока нет',
+  emptyMenu.children.some((node) => node?.props?.['data-dsh-polish-pin-all'] !== undefined),
+  false,
+  'кнопки «Закрепить все» нет, когда закреплять нечего',
 )
+
+// Хост передаёт откреплённые панели (в том числе чужие): рисуем их строки.
 const pinnedCalls = []
 let dismissCalls = 0
 const menuTree = panelActionsRegistration.component({
   entries: [
     { id: 'plugin-cards', label: 'Карточки', pinned: false },
-    { id: 'plugin-compact', label: 'Сжатие диалога', pinned: true },
-    { id: 'plugin-review', label: 'Ревью изменений', pinned: false },
+    { id: 'plugin-review', label: 'Ревью изменений', pinned: true },
+    { id: 'calendar', label: 'Календарь', pinned: false },
   ],
   onOpen() {},
   onPinnedChange: (id, value) => { pinnedCalls.push([id, value]) },
   onDismiss: () => { dismissCalls += 1 },
 })
 assert.equal(menuTree.type, 'div', 'список в обёртке')
-assert.equal(menuTree.props['data-dsh-polish-panellist-actions'], 'list')
-assert.equal(menuTree.children[0].props['data-dsh-polish-panellist-title'], 'unpinned', 'заголовок списка')
-assert.match(JSON.stringify(menuTree.children[0]), /Откреплённые панели/, 'подпись «Откреплённые панели»')
-
 const unpinnedRows = menuTree.children.filter((node) => node?.props?.['data-dsh-polish-pinnable'] !== undefined)
 assert.deepEqual(
   unpinnedRows.map((row) => row.props['data-dsh-polish-pinnable']),
-  ['plugin-cards', 'plugin-review'],
-  'в списке только откреплённые панели',
+  ['plugin-cards', 'calendar'],
+  'в списке только откреплённые панели; закреплённая не дублируется',
 )
 const firstPin = unpinnedRows[0].children[1]
 assert.equal(firstPin.type, 'button')
@@ -434,30 +473,17 @@ assert.equal(pinAllButton.props.style.height, 36, 'высота 36')
 assert.equal(pinAllButton.props.style.borderRadius, 10, 'радиус 10')
 assert.equal(pinAllButton.props.style.padding, '0 14px', 'padding 0 14')
 assert.equal(pinAllButton.props.style.whiteSpace, 'nowrap', 'ширина по тексту')
-assert.match(JSON.stringify(pinAllButton.children), /Закрепить все панели \(2\)/, 'только откреплённые в счётчике')
+assert.match(JSON.stringify(pinAllButton.children), /Закрепить все панели \(2\)/, 'счётчик — число строк списка')
 assert.doesNotMatch(JSON.stringify(pinAllButton.props.style), /#fff/, 'нет белого текста')
 pinnedCalls.length = 0
 dismissCalls = 0
 pinAllButton.props.onClick()
 assert.deepEqual(
   pinnedCalls,
-  [['plugin-cards', true], ['plugin-review', true]],
-  'закрепляет каждую откреплённую панель',
+  [['plugin-cards', true], ['calendar', true]],
+  'закрепляет каждую строку списка',
 )
 assert.equal(dismissCalls, 1, 'меню закрывается один раз')
-
-const allPinnedTree = panelActionsRegistration.component({
-  entries: [{ id: 'plugin-cards', label: 'Карточки', pinned: true }],
-  onPinnedChange() { throw new Error('у всех панелей pinned=true') },
-  onDismiss() {},
-})
-assert.ok(allPinnedTree !== null, 'подсказка вместо пустого меню')
-assert.match(JSON.stringify(allPinnedTree), /Все панели уже в левом меню/, 'все панели на месте')
-assert.equal(
-  allPinnedTree.children.some((node) => node?.props?.['data-dsh-polish-pin-all'] !== undefined),
-  false,
-  'кнопки «Закрепить все» нет, когда закреплять нечего',
-)
 
 /* --- 11 плагинов-панелей: main + sidebar.panellist с одинаковыми ключами --- */
 
@@ -503,40 +529,67 @@ for (const [index, registration] of sidebarRegs.entries()) {
   assert.equal(registration.options.label(), dict[`shortcut.${SHORTCUT_IDS[index]}.title`], 'подпись из словаря')
 }
 
-/* --- ShortcutPage: шапка, карточка, кнопка «Открыть настройки плагина» ---- */
+/* --- ShortcutPage: сразу открывает настоящие настройки плагина ----------- */
 
+const SHORTCUT_PACKAGES = {
+  cards: 'dsh-cards',
+  compact: 'dsh-compact',
+  review: 'dsh-review',
+  notify: 'dsh-notify',
+  team: 'dsh-team',
+  vault: 'dsh-vault',
+  pyrus: 'dsh-pyrus',
+  inbox: 'dsh-inbox',
+  polish: 'dsh-polish',
+  whale: 'dsh-plugin-whale-pet',
+  browser: 'dsh-browser-launcher',
+}
+
+openBundleCalls.length = 0
 for (const [index, id] of SHORTCUT_IDS.entries()) {
   const pageTreeOne = renderTree(mainRegs[index].component({}))
   assert.equal(pageTreeOne.props?.['data-dsh-polish-page'], 'page', `${id}: страница помечена data-атрибутом`)
   assert.equal(pageTreeOne.props?.['data-dsh-polish-shortcut'], id, `${id}: id плагина в разметке`)
+  assert.equal(pageTreeOne.props?.['data-dsh-polish-opening'], id, `${id}: страница в состоянии «открываю настройки»`)
   assert.equal(pageTreeOne.props?.style?.maxWidth, 960, `${id}: центрированная страница 960`)
-  assert.equal(pageTreeOne.props?.style?.margin, '0 auto', `${id}: по центру`)
   const pageJsonOne = JSON.stringify(pageTreeOne)
   assert.match(pageJsonOne, new RegExp(SHORTCUT_EMOJI[id].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `${id}: эмодзи в шапке`)
   assert.match(pageJsonOne, new RegExp(dict[`shortcut.${id}.title`]), `${id}: название плагина`)
-  assert.match(pageJsonOne, /О плагине/, `${id}: карточка описания`)
-  assert.match(pageJsonOne, /меню «Ещё»/, `${id}: подсказка про меню «Ещё»`)
+  assert.match(pageJsonOne, /Открываю настройки плагина/, `${id}: подпись «Открываю настройки плагина…»`)
+  assert.equal(
+    collect(pageTreeOne, (node) => node.props?.['data-dsh-polish-open-settings'] !== undefined).length,
+    0,
+    `${id}: кнопки-заглушки нет, когда сервис есть`,
+  )
 }
+assert.equal(openBundleCalls.length, SHORTCUT_IDS.length, 'openBundle вызван один раз на страницу')
+assert.deepEqual(
+  openBundleCalls,
+  SHORTCUT_IDS.map((id) => SHORTCUT_PACKAGES[id]),
+  'openBundle получает packageName каждого плагина',
+)
+assert.deepEqual(selections, [], 'страница не трогает layout, когда сервис доступен')
 
-const shortcutTree = renderTree(mainRegs[0].component({}))
-const shortcutHeaders = collect(shortcutTree, (node) => node.props?.['data-dsh-polish-header'] === 'header')
-assert.equal(shortcutHeaders.length, 1, 'шапка одна')
-const shortcutChips = collect(shortcutTree, (node) => node.props?.['data-dsh-polish-chip'] === 'status')
-assert.equal(shortcutChips.length, 1, 'статус-чип в шапке')
-assert.match(JSON.stringify(shortcutChips[0]), /В левом меню/, 'чип «В левом меню»')
-const shortcutCards = collect(shortcutTree, (node) => node.props?.['data-dsh-polish-card'] === 'shortcut')
-assert.equal(shortcutCards.length, 1, 'карточка плагина')
-assert.match(JSON.stringify(shortcutCards[0]), /Ответы-карточки в чате/, 'описание плагина в карточке')
-const openSettings = collect(shortcutTree, (node) => node.props?.['data-dsh-polish-open-settings'] === 'cards')[0]
-assert.ok(openSettings !== undefined, 'кнопка «Открыть настройки плагина»')
-assert.equal(openSettings.type, 'button')
-assert.equal(openSettings.props.style.height, 36, 'primary 36 px')
-assert.equal(openSettings.props.style.padding, '0 14px')
-assert.match(JSON.stringify(openSettings.children), /Открыть настройки плагина/)
-assert.doesNotMatch(JSON.stringify(openSettings.props.style), /#fff/, 'нет белого текста')
+// Fallback: сервиса pluginNavigation нет — остаётся страница с кнопкой.
+services.pluginNavigation = undefined
+openBundleCalls.length = 0
+const fallbackTree = renderTree(mainRegs[0].component({}))
+assert.equal(fallbackTree.props?.['data-dsh-polish-opening'], undefined, 'без сервиса нет «открываю настройки»')
+assert.equal(openBundleCalls.length, 0, 'без сервиса openBundle не вызывается')
+const fallbackJson = JSON.stringify(fallbackTree)
+assert.match(fallbackJson, /О плагине/, 'карточка «О плагине» на месте')
+assert.match(fallbackJson, /меню «Ещё»/, 'подсказка про меню «Ещё» на месте')
+const openSettingsButton = collect(fallbackTree, (node) => node.props?.['data-dsh-polish-open-settings'] === 'cards')[0]
+assert.ok(openSettingsButton !== undefined, 'кнопка «Открыть настройки плагина» в fallback')
+assert.equal(openSettingsButton.type, 'button')
+assert.equal(openSettingsButton.props.style.height, 36, 'primary 36 px')
+assert.equal(openSettingsButton.props.style.padding, '0 14px')
+assert.match(JSON.stringify(openSettingsButton.children), /Открыть настройки плагина/)
+assert.doesNotMatch(JSON.stringify(openSettingsButton.props.style), /#fff/, 'нет белого текста')
 selections.length = 0
-openSettings.props.onClick()
-assert.deepEqual(selections, ['plugins'], 'selectPanel("plugins") из main-панели')
+openSettingsButton.props.onClick()
+assert.deepEqual(selections, ['plugins'], 'selectPanel("plugins") из main-панели в fallback')
+services.pluginNavigation = pluginNavigation
 
 const cleanups = effects.map((fn) => fn())
 
@@ -819,14 +872,164 @@ assert.ok(cards.length >= 5, `карточки-секции отрисованы
 assert.ok(cards.every((card) => card.props?.style?.borderRadius === 14), 'у карточек радиус 14')
 assert.ok(cards.every((card) => card.props?.style?.background === 'var(--dsw-alias-bg-layer-1)'), 'фон карточек — токен слоя')
 
-// Блок-подсказка «Панели в левом меню»: заголовок и текст про меню «Ещё».
+// Карточка «Панели в левом меню»: список 11 плагинов с переключателем.
 const panelsCards = cards.filter((card) => card.props?.['data-dsh-polish-card'] === 'panels')
 assert.equal(panelsCards.length, 1, 'блок «Панели в левом меню» на странице')
 const panelsCardJson = JSON.stringify(panelsCards[0])
 assert.match(panelsCardJson, /Панели в левом меню/, 'заголовок блока')
 assert.match(panelsCardJson, /Открепили панель\? Она осталась в меню «Ещё»/, 'подсказка про меню «Ещё»')
-const switchInput = collect(pageTree, (node) => node.type === 'input' && node.props?.type === 'checkbox')
+assert.match(panelsCardJson, /Показывать в левом меню/, 'подпись переключателя строки')
+assert.match(panelsCardJson, /включено: 11 из 11/, 'счётчик включённых панелей')
+assert.match(panelsCardJson, /Выключите переключатель/, 'подсказка про выключение')
+const settingsPanelRows = collect(pageTree, (node) => node.props?.['data-dsh-polish-panel-row'] !== undefined)
+assert.equal(settingsPanelRows.length, 11, 'в карточке 11 строк плагинов')
+assert.deepEqual(
+  settingsPanelRows.map((row) => row.props['data-dsh-polish-panel-row']),
+  SHORTCUT_IDS,
+  'порядок строк — порядок панелей',
+)
+const panelToggles = collect(
+  pageTree,
+  (node) => node.type === 'input' && node.props?.['data-dsh-polish-panel-toggle'] !== undefined,
+)
+assert.equal(panelToggles.length, 11, 'у каждой строки свой переключатель')
+for (const toggle of panelToggles) {
+  assert.equal(toggle.props.type, 'checkbox', 'переключатель — флажок')
+  assert.equal(toggle.props.checked, true, 'по умолчанию панель включена')
+  assert.match(String(toggle.props['aria-label']), /Показывать в левом меню/, 'подпись доступности')
+}
+const switchInput = collect(
+  pageTree,
+  (node) =>
+    node.type === 'input' &&
+    node.props?.type === 'checkbox' &&
+    node.props?.['data-dsh-polish-panel-toggle'] === undefined,
+)
 assert.equal(switchInput.length, 1, 'переключатель оформления на месте')
+
+/* --- Динамическая видимость панелей и localStorage ----------------------- */
+
+const toggleById = new Map(panelToggles.map((node) => [node.props['data-dsh-polish-panel-toggle'], node]))
+const countPanelRegs = (panelId) =>
+  registrations.filter(
+    (item) =>
+      (item.options.name === 'main' && item.options.key === panelId) ||
+      (item.options.name === 'sidebar.panellist' && item.options.id === panelId),
+  ).length
+const readPanelStorage = () => JSON.parse(storage.get(PANEL_VISIBILITY_KEY))
+assert.equal(countPanelRegs('plugin-cards'), 2, 'старт: main + строка в левой панели')
+
+// Выключение — регистрации снимаются, состояние уходит в localStorage.
+toggleById.get('cards').props.onChange({ target: { checked: false } })
+assert.equal(countPanelRegs('plugin-cards'), 0, 'выключение снимает обе регистрации')
+let saved = readPanelStorage()
+assert.equal(saved.visible.includes('cards'), false, 'выключенная панель не видна')
+assert.equal(saved.pinned.includes('cards'), false, 'выключенная панель не закреплена')
+assert.deepEqual(saved.visible.length, 10, 'остальные панели остались')
+
+// Включение возвращает видимость, но не рельс: панель ждёт в «Ещё».
+toggleById.get('cards').props.onChange({ target: { checked: true } })
+assert.equal(countPanelRegs('plugin-cards'), 0, 'включение само панель не регистрирует')
+saved = readPanelStorage()
+assert.equal(saved.visible.includes('cards'), true, 'включённая панель видна в настройках')
+assert.equal(saved.pinned.includes('cards'), false, 'включённая панель попадает в «Ещё», не в рельс')
+
+// Меню «Ещё» показывает видимую-но-не-закреплённую панель.
+pinnedCalls.length = 0
+dismissCalls = 0
+let visibleMenu = panelActionsRegistration.component({
+  entries: [],
+  onPinnedChange: (id, value) => { pinnedCalls.push([id, value]) },
+  onDismiss: () => { dismissCalls += 1 },
+})
+let menuRows = visibleMenu.children.filter((node) => node?.props?.['data-dsh-polish-pinnable'] !== undefined)
+assert.deepEqual(
+  menuRows.map((row) => row.props['data-dsh-polish-pinnable']),
+  ['plugin-cards'],
+  'в «Ещё» только видимая-но-не-закреплённая панель',
+)
+menuRows[0].children[1].props.onClick()
+assert.equal(countPanelRegs('plugin-cards'), 2, '«Закрепить» регистрирует main + строку')
+assert.deepEqual(pinnedCalls, [['plugin-cards', true]], 'onPinnedChange(id, true) для закрепления')
+assert.equal(dismissCalls, 1, 'меню закрылось')
+assert.equal(readPanelStorage().pinned.includes('cards'), true, 'закрепление сохранено')
+
+// «Закрепить все панели (N)»: N — число видимых-но-не-закреплённых.
+for (const id of ['review', 'vault']) {
+  toggleById.get(id).props.onChange({ target: { checked: false } })
+  toggleById.get(id).props.onChange({ target: { checked: true } })
+}
+pinnedCalls.length = 0
+dismissCalls = 0
+visibleMenu = panelActionsRegistration.component({
+  entries: [],
+  onPinnedChange: (id, value) => { pinnedCalls.push([id, value]) },
+  onDismiss: () => { dismissCalls += 1 },
+})
+menuRows = visibleMenu.children.filter((node) => node?.props?.['data-dsh-polish-pinnable'] !== undefined)
+assert.deepEqual(
+  menuRows.map((row) => row.props['data-dsh-polish-pinnable']),
+  ['plugin-review', 'plugin-vault'],
+  'в списке обе видимые-но-не-закреплённые панели',
+)
+const pinAllButtonDynamic = visibleMenu.children.find((node) => node?.props?.['data-dsh-polish-pin-all'] === 'button')
+assert.match(
+  JSON.stringify(pinAllButtonDynamic.children),
+  /Закрепить все панели \(2\)/,
+  'счётчик N — число видимых-но-не-закреплённых',
+)
+pinAllButtonDynamic.props.onClick()
+assert.deepEqual(
+  pinnedCalls,
+  [['plugin-review', true], ['plugin-vault', true]],
+  '«все» закрепляет каждую строку',
+)
+assert.equal(countPanelRegs('plugin-review'), 2, 'review снова в рельсе')
+assert.equal(countPanelRegs('plugin-vault'), 2, 'vault снова в рельсе')
+assert.equal(dismissCalls, 1, 'меню закрылось один раз')
+
+// Та же панель пришла и в entries — строки в меню не дублируются.
+toggleById.get('team').props.onChange({ target: { checked: false } })
+toggleById.get('team').props.onChange({ target: { checked: true } })
+visibleMenu = panelActionsRegistration.component({
+  entries: [
+    { id: 'plugin-team', label: 'Команда', pinned: false },
+    { id: 'calendar', label: 'Календарь', pinned: false },
+  ],
+  onPinnedChange() {},
+  onDismiss() {},
+})
+menuRows = visibleMenu.children.filter((node) => node?.props?.['data-dsh-polish-pinnable'] !== undefined)
+assert.deepEqual(
+  menuRows.map((row) => row.props['data-dsh-polish-pinnable']),
+  ['plugin-team', 'calendar'],
+  'наша строка не дублируется, чужая панель хоста добавлена',
+)
+assert.equal(
+  menuRows.filter((row) => row.props['data-dsh-polish-pinnable'] === 'plugin-team').length,
+  1,
+  'ровно одна строка на панель',
+)
+
+// Всё закреплено — подсказка вместо списка.
+menuRows[0].children[1].props.onClick()
+pinnedCalls.length = 0
+visibleMenu = panelActionsRegistration.component({ entries: [], onPinnedChange() {}, onDismiss() {} })
+menuRows = visibleMenu.children.filter((node) => node?.props?.['data-dsh-polish-pinnable'] !== undefined)
+assert.equal(menuRows.length, 0, 'закреплять нечего')
+assert.match(JSON.stringify(visibleMenu), /Все панели уже в левом меню/)
+assert.equal(
+  registrations.filter((item) => item.options.name === 'main').length,
+  11,
+  'все 11 main-панелей снова зарегистрированы',
+)
+assert.equal(
+  registrations.filter((item) => item.options.name === 'sidebar.panellist' && item.options.id?.startsWith('plugin-')).length,
+  11,
+  'все 11 строк левой панели снова зарегистрированы',
+)
+assert.equal(readPanelStorage().visible.length, 11, 'все панели снова видны')
+assert.equal(readPanelStorage().pinned.length, 11, 'все панели снова закреплены')
 
 const pageStyles = collect(pageTree, (node) => node.type === 'style')
 const pageCss = pageStyles.map((node) => node.children?.join('') ?? '').join('\n')
@@ -875,8 +1078,9 @@ for (const key of [
   'reload', 'healthTitle', 'journalTitle', 'updatesTitle', 'check', 'fix', 'checking',
   'panelsTitle', 'panelsHint', 'panelsPinAll', 'panelsPinTitle',
   'panelsUnpinnedTitle', 'panelsUnpinnedHint', 'panelsPinOne', 'panelsPinOneTitle', 'panelsAllPinned',
+  'panelsShowLabel', 'panelsPinned', 'panelsInMore', 'panelsVisibleCount', 'panelsVisibilityHint',
   'shortcutHeading', 'shortcutChip', 'shortcutAbout', 'shortcutHint', 'shortcutSettings',
-  'shortcutSettingsFailed', 'shortcutSettingsHint',
+  'shortcutSettingsFailed', 'shortcutSettingsHint', 'shortcutOpening', 'shortcutOpeningHint',
 ]) {
   assert.equal(typeof enBundle[key], 'string', `en: ключ ${key}`)
   assert.equal(typeof ruBundle[key], 'string', `ru: ключ ${key}`)
@@ -894,6 +1098,65 @@ assert.match(ruBundle.panelsPinAll, /\{count\}/, 'ru-кнопка подстав
 assert.match(ruBundle.shortcutHint, /кнопкой-булавкой/, 'ru-подсказка про булавку')
 assert.match(ruBundle.shortcutHint, /меню «Ещё»/, 'ru-подсказка про меню «Ещё»')
 assert.match(ruBundle.panelsPinOneTitle, /\{name\}/, 'подсказка булавки подставляет название')
+assert.match(ruBundle.shortcutOpening, /Открываю настройки плагина/, 'ru: «Открываю настройки плагина…»')
+assert.match(enBundle.shortcutOpening, /Opening plugin settings/, 'en: «Opening plugin settings…»')
+assert.match(ruBundle.panelsVisibilityHint, /меню «Ещё»/, 'ru: подсказка про выключение и «Ещё»')
+assert.match(ruBundle.panelsShowLabel, /Показывать в левом меню/, 'ru: подпись переключателя')
+assert.match(enBundle.panelsShowLabel, /Show in the left sidebar/, 'en: подпись переключателя')
+assert.match(ruBundle.panelsVisibleCount, /\{count\}.*\{total\}/, 'ru: счётчик включённых')
+assert.match(enBundle.panelsVisibleCount, /\{count\}.*\{total\}/, 'en: счётчик включённых')
+
+/* --- Восстановление состояния при загрузке ------------------------------- */
+
+// Кладём сохранённое состояние и загружаем плагин заново: регистрируются
+// только видимые и закреплённые панели, «карточки» выключены.
+storage.set(
+  PANEL_VISIBILITY_KEY,
+  JSON.stringify({
+    visible: SHORTCUT_IDS.filter((id) => id !== 'cards'),
+    pinned: SHORTCUT_IDS.filter((id) => id !== 'cards'),
+  }),
+)
+let reloaded
+globalThis.window = { __ModuleLoader__: { load: (entry) => { reloaded = entry } } }
+new Function(source)()
+const exportedAgain = reloaded.factory((id) => modules[id])
+const reloadRegistrations = []
+const reloadCtx = {
+  ...ctx,
+  slots: {
+    inject: (name, register) => {
+      const dispose = register()
+      return () => {
+        if (typeof dispose === 'function') dispose()
+      }
+    },
+    register: (options, component) => {
+      const record = { options, component }
+      reloadRegistrations.push(record)
+      return () => {
+        const index = reloadRegistrations.indexOf(record)
+        if (index >= 0) reloadRegistrations.splice(index, 1)
+      }
+    },
+  },
+}
+exportedAgain.apply(reloadCtx)
+const reloadMain = reloadRegistrations.filter((item) => item.options.name === 'main')
+const reloadSidebar = reloadRegistrations.filter((item) => item.options.name === 'sidebar.panellist')
+assert.equal(reloadMain.length, 10, 'при загрузке регистрируются только включённые и закреплённые')
+assert.equal(reloadSidebar.length, 10, 'строк левой панели тоже 10')
+assert.equal(
+  reloadMain.some((item) => item.options.key === 'plugin-cards'),
+  false,
+  'выключенная панель не регистрируется после загрузки',
+)
+assert.equal(
+  reloadSidebar.some((item) => item.options.id === 'plugin-cards'),
+  false,
+  'строки выключенной панели нет в левой панели',
+)
+assert.equal(reloadMain.find((item) => item.options.key === 'plugin-polish') !== undefined, true, 'включённые на месте')
 
 console.log('polish smoke: OK')
 console.log('  стили:', css.split('\n').length, 'строк | карточка:', inner.children.length, 'элементов')
@@ -901,5 +1164,12 @@ console.log('  описание:', 'свёрнуто, шеврон, localStorage
 console.log('  документ:', 'скрыт data-detail-document, без дублей, restore очищает разметку')
 console.log('  страница:', 'maxWidth 960, шапка 🎨, чип, «Обновить», карточек:', cards.length, ', адаптив')
 console.log('  выравнивание:', 'text-align justify + hyphens auto; код, таблицы и списки исключены')
-console.log('  панели:', '11 main + 11 sidebar.panellist (plugin-<id>), список откреплённых, «Закрепить все панели (N)»')
+console.log(
+  '  панели-ярлыки:',
+  'openBundle при монтировании (11 packageName), fallback с кнопкой, 11 main + 11 sidebar.panellist',
+)
+console.log(
+  '  видимость:',
+  'localStorage dsh-polish:panel-visibility, динамические регистрации, «Ещё», «Закрепить все панели (N)», без дублей',
+)
 console.log('  эмодзи-иконки:', PANEL_EMOJI_CASES.length, 'меток ru/en, data-dsh-panel-emoji на nav, observer и cleanup')
