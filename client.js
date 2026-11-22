@@ -45,6 +45,40 @@ window.__ModuleLoader__.load({
       descDoc: 'Detailed description',
       descDocOpen: 'Collapse detailed description',
       descDocClosed: 'Expand detailed description',
+      reload: 'Refresh',
+      healthTitle: 'State',
+      check: 'Check',
+      checking: 'Checking…',
+      allOk: 'everything is fine',
+      needsAttention: 'needs attention: {count}',
+      quickStart: 'Quick start: {done} of {total}',
+      healthHint: 'Checks git, repository access, backup, token, Chrome, the debug port, MCP and plugin versions.',
+      fix: 'Fix',
+      fixing: 'fixing…',
+      fixFailed: 'did not work: {message}',
+      checkFailed: 'could not check',
+      journalTitle: 'Journal',
+      show: 'Show',
+      journalHint: 'Recent checks and fixes.',
+      journalEmpty: 'No records yet.',
+      updatesTitle: 'Plugin updates',
+      allCurrent: 'all up to date',
+      available: 'available: {count}',
+      copyCommands: 'Copy commands',
+      commandsCopied: 'commands copied: {count}',
+      updateAll: 'Update all',
+      updating: 'updating… this may take a minute',
+      updatesHint: 'Press “Check” to compare installed versions with GitHub.',
+      'hints.token': 'Settings → Plugins → GitHub → Personal access token field.',
+      'hints.sync': 'Check GitHub sign-in: git ls-remote <repository URL>.',
+      'hints.chrome': 'Install Google Chrome — the agent browser will not start without it.',
+      'hints.port': 'Open “Start” on the right and press “Launch browser”.',
+      'hints.secrets': 'Write the logins into ~/.dsh/browser-secrets.env following the preparation archive sample.',
+      'hints.mcp': 'Press “Fix” — the server will be added to the profile.',
+      'hints.versions': 'Press “Copy commands” in the updates block and run them in a terminal.',
+      'hints.backup': 'Check free space on Yandex Disk and start the sync manually.',
+      reloadHint: 'Reload page (Ctrl+R)',
+      summary: 'Appearance of all plugins, checks and updates.',
     }
     const ru = {
       reload: 'Обновить',
@@ -60,6 +94,39 @@ window.__ModuleLoader__.load({
       descDoc: 'Подробное описание',
       descDocOpen: 'Свернуть подробное описание',
       descDocClosed: 'Развернуть подробное описание',
+      healthTitle: 'Состояние',
+      check: 'Проверить',
+      checking: 'Проверяю…',
+      allOk: 'всё в порядке',
+      needsAttention: 'требует внимания: {count}',
+      quickStart: 'Быстрый старт: {done} из {total}',
+      healthHint: 'Проверяет git, доступ к репозиторию, резерв, токен, Chrome, порт отладки, MCP и версии.',
+      fix: 'Исправить',
+      fixing: 'исправляю…',
+      fixFailed: 'не получилось: {message}',
+      checkFailed: 'не удалось проверить',
+      journalTitle: 'Журнал',
+      show: 'Показать',
+      journalHint: 'Последние проверки и исправления.',
+      journalEmpty: 'Записей пока нет.',
+      updatesTitle: 'Обновления плагинов',
+      allCurrent: 'все актуальны',
+      available: 'доступно: {count}',
+      copyCommands: 'Скопировать команды',
+      commandsCopied: 'команды скопированы: {count}',
+      updateAll: 'Обновить всё',
+      updating: 'обновляю… это может занять минуту',
+      updatesHint: 'Нажмите «Проверить», чтобы сравнить установленные версии с GitHub.',
+      'hints.token': 'Настройки → Плагины → GitHub → поле Personal access token.',
+      'hints.sync': 'Проверь вход в GitHub: git ls-remote <адрес репозитория>.',
+      'hints.chrome': 'Установи Google Chrome — без него браузер агента не поднимается.',
+      'hints.port': 'Открой «Старт» справа и нажми «Запустить браузер».',
+      'hints.secrets': 'Впиши логины в ~/.dsh/browser-secrets.env по образцу из архива подготовки.',
+      'hints.mcp': 'Нажми «Исправить» — сервер допишется в профиль.',
+      'hints.versions': 'Нажми «Скопировать команды» в блоке обновлений и выполни их в терминале.',
+      'hints.backup': 'Проверь свободное место на Яндекс.Диске и запусти синхронизацию вручную.',
+      reloadHint: 'Обновить страницу (Ctrl+R)',
+      summary: 'Внешний вид всех плагинов, проверки и обновления.',
     }
 
     const CSS = `
@@ -192,6 +259,200 @@ select option:checked {
   display: none !important;
 }
 `
+
+    /** Только токены DSH: акцент, границы, текст — без жёстких цветов. */
+    const ACCENT = 'var(--dsw-alias-brand-primary)'
+    const OK_COLOR = 'var(--dsw-alias-state-success-primary)'
+    const BAD_COLOR = 'var(--dsw-alias-state-error-primary)'
+
+    const S = {
+      page: {
+        width: '100%',
+        maxWidth: 960,
+        margin: '0 auto',
+        padding: '24px 28px 40px',
+        boxSizing: 'border-box',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 16,
+        color: 'inherit',
+      },
+      header: { display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' },
+      logo: {
+        flex: 'none',
+        width: 52,
+        height: 52,
+        borderRadius: 14,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: 26,
+        lineHeight: 1,
+        color: ACCENT,
+        background:
+          'linear-gradient(135deg, color-mix(in srgb, var(--dsw-alias-brand-primary) 24%, transparent), color-mix(in srgb, var(--dsw-alias-brand-primary) 8%, transparent))',
+        border: '1px solid color-mix(in srgb, var(--dsw-alias-brand-primary) 22%, transparent)',
+      },
+      titles: { display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0, flex: '1 1 220px' },
+      heading: { margin: 0, fontSize: 20, fontWeight: 600, lineHeight: 1.25, color: 'var(--dsw-alias-label-primary)' },
+      subtitle: {
+        margin: 0,
+        fontSize: 12.5,
+        lineHeight: 1.45,
+        color: 'var(--dsw-alias-label-secondary)',
+        maxWidth: '70ch',
+        display: '-webkit-box',
+        WebkitLineClamp: 2,
+        WebkitBoxOrient: 'vertical',
+        overflow: 'hidden',
+      },
+      actions: { marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
+      chip: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '3px 9px',
+        borderRadius: 999,
+        fontSize: 12,
+        lineHeight: 1.4,
+        color: 'var(--dsw-alias-label-secondary)',
+        background: 'color-mix(in srgb, var(--dsw-alias-brand-primary) 10%, transparent)',
+        whiteSpace: 'nowrap',
+      },
+      chipDot: (color) => ({ width: 7, height: 7, borderRadius: 999, background: color, flex: 'none' }),
+      refresh: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        height: 32,
+        padding: '0 12px',
+        borderRadius: 9,
+        border: '1px solid var(--dsw-alias-border-l4)',
+        background: 'transparent',
+        color: 'var(--dsw-alias-label-primary)',
+        font: 'inherit',
+        fontSize: 12.5,
+        fontWeight: 600,
+        cursor: 'pointer',
+      },
+      grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 },
+      stack: { display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 },
+      card: {
+        background: 'var(--dsw-alias-bg-layer-1)',
+        border: '1px solid var(--dsw-alias-border-l2)',
+        borderRadius: 14,
+        padding: 16,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 12,
+        minWidth: 0,
+      },
+      cardHead: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
+      cardTitle: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        fontSize: 14,
+        fontWeight: 600,
+        color: 'var(--dsw-alias-label-primary)',
+      },
+      stripe: { flex: 'none', width: 3, height: 14, borderRadius: 2, background: ACCENT },
+      hint: { margin: 0, fontSize: 12, lineHeight: 1.5, color: 'var(--dsw-alias-label-tertiary)' },
+      text: { margin: 0, fontSize: 12.5, lineHeight: 1.5, color: 'var(--dsw-alias-label-secondary)' },
+      row: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
+      list: { display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 },
+      listRow: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '8px 10px',
+        borderRadius: 10,
+        borderBottom: '1px solid var(--dsw-alias-border-l1)',
+        fontSize: 12,
+        lineHeight: 1.45,
+        color: 'var(--dsw-alias-label-secondary)',
+        minWidth: 0,
+      },
+      label: { fontSize: 12, color: 'var(--dsw-alias-label-secondary)' },
+      mark: (ok) => ({
+        flex: 'none',
+        width: 16,
+        textAlign: 'center',
+        fontWeight: 700,
+        color: ok ? OK_COLOR : BAD_COLOR,
+      }),
+      primary: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        height: 36,
+        padding: '0 16px',
+        borderRadius: 10,
+        border: '1px solid var(--dsw-alias-brand-primary)',
+        background: 'var(--dsw-alias-brand-primary)',
+        color: 'var(--dsw-alias-bg-base)',
+        font: 'inherit',
+        fontSize: 12.5,
+        fontWeight: 600,
+        cursor: 'pointer',
+      },
+      secondary: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+        height: 28,
+        padding: '0 10px',
+        borderRadius: 8,
+        border: '1px solid var(--dsw-alias-border-l4)',
+        background: 'transparent',
+        color: 'var(--dsw-alias-label-primary)',
+        font: 'inherit',
+        fontSize: 12,
+        fontWeight: 600,
+        cursor: 'pointer',
+      },
+      input: {
+        height: 34,
+        borderRadius: 9,
+        border: '1px solid var(--dsw-alias-border-l2)',
+        background: 'var(--dsw-alias-bg-layer-2)',
+        color: 'var(--dsw-alias-label-primary)',
+        font: 'inherit',
+        fontSize: 12.5,
+        padding: '0 10px',
+        boxSizing: 'border-box',
+      },
+      switchRow: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        fontSize: 12.5,
+        lineHeight: 1.5,
+        color: 'var(--dsw-alias-label-primary)',
+        cursor: 'pointer',
+      },
+      error: { margin: 0, fontSize: 12, lineHeight: 1.5, color: BAD_COLOR },
+    }
+
+    /** Адаптив и hover строк списка — то, что не выразить inline-стилями. */
+    const PAGE_CSS =
+      '[data-dsh-polish-row]:hover{background:color-mix(in srgb, var(--dsw-alias-label-primary) 5%, transparent)}' +
+      '[data-dsh-polish-button]:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}' +
+      '[data-dsh-polish-button]:disabled{opacity:0.55;cursor:default}' +
+      '@media (max-width: 760px){' +
+      '[data-dsh-polish-page]{padding:18px 16px 32px !important}' +
+      '[data-dsh-polish-header]{align-items:flex-start}' +
+      '[data-dsh-polish-actions]{margin-left:0 !important;width:100%}' +
+      '}'
+
+    /** Подстановка {name} в строки словаря. */
+    function fmt(text, values) {
+      return String(text ?? '').replace(/\{(\w+)\}/g, (match, name) =>
+        Object.hasOwn(values ?? {}, name) ? String(values[name]) : match,
+      )
+    }
 
 
     /**
@@ -665,355 +926,276 @@ select option:checked {
       }
     }
 
+    /** Карточка-секция страницы: заголовок с акцентной полоской и содержимое. */
+    function cardSection(id, title, actions, ...children) {
+      return h(
+        'section',
+        { style: S.card, 'data-dsh-polish-card': id },
+        h(
+          'div',
+          { style: S.cardHead },
+          h('div', { style: S.cardTitle }, h('span', { style: S.stripe }), title),
+          actions ?? null,
+        ),
+        ...children,
+      )
+    }
 
-    /** Список доступных обновлений наших плагинов. */
-
-    /** Свёрнутая строка плагина: заголовок, пояснение и «Открыть». */
-    /** Кнопка-шеврон: развернуть и свернуть. Виден в любой теме (currentColor). */
-    function ToggleIcon({ open, onClick }) {
+    /** Маленькая secondary-кнопка внутри карточек. */
+    function smallButton(label, onClick, disabled) {
       return h(
         'button',
         {
           type: 'button',
+          style: S.secondary,
+          disabled: disabled === true,
+          'data-dsh-polish-button': 'secondary',
           onClick,
-          title: open ? 'Свернуть' : 'Открыть',
-          'aria-label': open ? 'Свернуть' : 'Открыть',
-          'aria-expanded': open ? 'true' : 'false',
-          style: {
-            position: 'absolute',
-            // Свёрнутая карточка: по центру по вертикали. Развёрнутая: в углу.
-            top: open ? 8 : '50%',
-            transform: open ? 'none' : 'translateY(-50%)',
-            right: 8,
-            zIndex: 2,
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: 28,
-            height: 28,
-            padding: 0,
-            borderRadius: 8,
-            border: '1px solid rgba(128,128,128,0.32)',
-            background: 'rgba(128,128,128,0.1)',
-            color: 'inherit',
-            cursor: 'pointer',
-          },
         },
-        h(
-          'svg',
-          {
-            width: 16,
-            height: 16,
-            viewBox: '0 0 24 24',
-            fill: 'none',
-            'aria-hidden': 'true',
-            focusable: 'false',
-            style: { transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s ease' },
-          },
-          h('path', {
-            d: 'M6 15l6-6 6 6',
-            stroke: 'currentColor',
-            strokeWidth: 2,
-            strokeLinecap: 'round',
-            strokeLinejoin: 'round',
-          }),
-        ),
+        label,
       )
     }
 
-function CollapsedItem({ title, summary, badge, children }) {
-      const [open, setOpen] = React.useState(false)
-      const box = {
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 8,
-        padding: '10px 12px',
-        borderRadius: 10,
-        border: '1px solid rgba(128,128,128,0.22)',
-        background: 'rgba(128,128,128,0.05)',
-      }
+    /** Статус-чип: цветная точка и текст. */
+    function chipNode(label, color) {
       return h(
-        'div',
-        {
-          style: {
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 8,
-            position: 'relative',
-            padding: '10px 44px 12px 12px',
-            borderRadius: 10,
-            border: '1px solid rgba(128,128,128,0.28)',
-            background: 'rgba(128,128,128,0.07)',
-            boxSizing: 'border-box',
-          },
-        },
-        h(
-          'div',
-          { style: { display: 'flex', alignItems: 'center', gap: 10 } },
-          h('span', { style: { fontSize: 13, fontWeight: 600 } }, title),
-          badge !== undefined && badge !== '' ? h('span', { style: { fontSize: 10.5, padding: '1px 7px', borderRadius: 999, background: 'rgba(106,139,208,0.22)', color: 'inherit', opacity: 0.9 } }, badge) : null,
-          h('span', { style: { flex: 1, fontSize: 11.5, opacity: 0.6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, summary ?? ''),
-          h(ToggleIcon, { open, onClick: () => setOpen(!open) }),
-        ),
-        open
-          ? h(
-              'div',
-              {
-                style: {
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 10,
-                  paddingTop: 10,
-                  marginTop: 2,
-                  borderTop: '1px solid rgba(128,128,128,0.24)',
-                },
-              },
-              children,
-            )
-          : null,
+        'span',
+        { style: S.chip, 'data-dsh-polish-chip': 'status' },
+        h('span', { style: S.chipDot(color ?? ACCENT) }),
+        label,
       )
     }
 
     function UpdatesBlock() {
-      const [rows, setRows] = React.useState(null);
-      const [busy, setBusy] = React.useState(false);
+      const t = (key) => translate(key)
+      const [rows, setRows] = React.useState(null)
+      const [busy, setBusy] = React.useState(false)
+      const [note, setNote] = React.useState('')
 
       const load = async () => {
-        setBusy(true);
+        setBusy(true)
         try {
-          const response = await fetch(UPDATES_PATH, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
-          const data = await response.json();
-          setRows(Array.isArray(data?.rows) ? data.rows : []);
+          const response = await fetch(UPDATES_PATH, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
+          const data = await response.json()
+          setRows(Array.isArray(data?.rows) ? data.rows : [])
         } catch {
-          setRows([]);
+          setRows([])
         } finally {
-          setBusy(false);
+          setBusy(false)
         }
-      };
+      }
 
-      const behind = (rows ?? []).filter((row) => row.behind === true);
+      const behind = (rows ?? []).filter((row) => row.behind === true)
 
-      return h(
-        'div',
-        { style: { display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 10, borderTop: '1px solid rgba(128,128,128,0.18)' } },
-        h(
-          'div',
-          { style: { display: 'flex', alignItems: 'center', gap: 10 } },
-          h('span', { style: { fontSize: 12.5, fontWeight: 600 } }, 'Обновления плагинов'),
-          h(
-            'button',
-            { style: { padding: '4px 10px', borderRadius: 8, border: '1px solid rgba(128,128,128,0.35)', background: 'rgba(128,128,128,0.12)', color: 'inherit', font: 'inherit', fontSize: 12, cursor: 'pointer' }, onClick: () => void load() },
-            busy ? 'Проверяю…' : 'Проверить',
-          ),
-          rows !== null ? h('span', { style: { fontSize: 12, opacity: 0.7 } }, behind.length === 0 ? 'все актуальны' : 'доступно: ' + behind.length) : null,
-          behind.length > 0
-            ? h(
-                'button',
-                {
-                  style: { padding: '4px 10px', borderRadius: 8, border: '1px solid rgba(128,128,128,0.35)', background: 'rgba(128,128,128,0.12)', color: 'inherit', font: 'inherit', fontSize: 12, cursor: 'pointer' },
-                  onClick: () => {
-                    const commands = behind.map((row) => 'dsh plugin --profile desktop add github:' + (row.repo ?? row.name)).join('\n');
-                    try {
-                      void navigator.clipboard.writeText(commands);
-                      setNote('команды скопированы: ' + behind.length);
-                    } catch {
-                      setNote(commands);
-                    }
-                  },
-                },
-                'Скопировать команды',
-              )
-            : null,
-          behind.length > 0
-            ? h(
-                'button',
-                {
-                  style: { padding: '4px 10px', borderRadius: 8, border: '1px solid rgba(106,139,208,0.45)', background: 'rgba(106,139,208,0.16)', color: 'inherit', font: 'inherit', fontSize: 12, cursor: 'pointer' },
-                  onClick: async () => {
-                    setNote('обновляю… это может занять минуту')
-                    try {
-                      const response = await fetch(UPDATE_ALL_PATH, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ apply: true }) })
-                      const data = await response.json()
-                      setNote(String(data?.message ?? 'готово'))
-                      await load()
-                    } catch (error) {
-                      setNote('не удалось: ' + String(error?.message ?? error))
-                    }
-                  },
-                },
-                'Обновить всё',
-              )
-            : null,
-        ),
-        rows === null
-          ? h('span', { style: { fontSize: 11.5, opacity: 0.6 } }, 'Нажмите «Проверить», чтобы сравнить установленные версии с GitHub.')
-          : h(
-              'div',
-              { style: { display: 'flex', flexDirection: 'column', gap: 4 } },
-              ...rows.map((row) =>
-                h(
-                  'div',
-                  { key: row.name, style: { display: 'flex', gap: 10, fontSize: 11.5, opacity: row.behind === true ? 1 : 0.7 } },
-                  h('span', { style: { minWidth: 150 } }, row.name),
-                  h('span', null, row.installed ?? '—'),
-                  h('span', { style: { opacity: 0.6 } }, '→'),
-                  h('span', { style: { fontWeight: row.behind === true ? 600 : 400 } }, row.latest ?? row.error ?? '—'),
-                ),
-              ),
-            ),
-      );
-    }
-
-
-    /** Подсказки: что делать, если проверка не прошла. */
-    const HINTS = {
-      token: 'Настройки → Плагины → GitHub → поле Personal access token.',
-      sync: 'Проверь вход в GitHub: git ls-remote <адрес репозитория>.',
-      chrome: 'Установи Google Chrome — без него браузер агента не поднимается.',
-      port: 'Открой «Старт» справа и нажми «Запустить браузер».',
-      secrets: 'Впиши логины в ~/.dsh/browser-secrets.env по образцу из архива подготовки.',
-      mcp: 'Нажми «Исправить» — сервер допишется в профиль.',
-      versions: 'Нажми «Скопировать команды» в блоке обновлений и выполни их в терминале.',
-      backup: 'Проверь свободное место на Яндекс.Диске и запусти синхронизацию вручную.',
-    }
-
-    /** Экран «Состояние»: проверки окружения и починка того, что исправимо. */
-
-    /** Журнал: что проверяли и исправляли в последнее время. */
-    function JournalBlock() {
-      const [rows, setRows] = React.useState(null);
-
-      const load = async () => {
+      const copyCommands = () => {
+        const commands = behind.map((row) => 'dsh plugin --profile desktop add github:' + (row.repo ?? row.name)).join('\n')
         try {
-          const response = await fetch(LOG_PATH, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
-          const data = await response.json();
-          setRows(Array.isArray(data?.rows) ? data.rows : []);
+          void navigator.clipboard.writeText(commands)
+          setNote(fmt(t('commandsCopied'), { count: behind.length }))
         } catch {
-          setRows([]);
+          setNote(commands)
         }
-      };
+      }
 
-      return h(
+      const updateAll = async () => {
+        setNote(t('updating'))
+        try {
+          const response = await fetch(UPDATE_ALL_PATH, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ apply: true }) })
+          const data = await response.json()
+          setNote(String(data?.message ?? t('allCurrent')))
+          await load()
+        } catch (error) {
+          setNote(fmt(t('fixFailed'), { message: String(error?.message ?? error) }))
+        }
+      }
+
+      const actions = h(
         'div',
-        { style: { display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 10, borderTop: '1px solid rgba(128,128,128,0.18)' } },
-        h(
-          'div',
-          { style: { display: 'flex', alignItems: 'center', gap: 10 } },
-          h('span', { style: { fontSize: 12.5, fontWeight: 600 } }, 'Журнал'),
-          h(
-            'button',
-            { style: { padding: '4px 10px', borderRadius: 8, border: '1px solid rgba(128,128,128,0.35)', background: 'rgba(128,128,128,0.12)', color: 'inherit', font: 'inherit', fontSize: 12, cursor: 'pointer' }, onClick: () => void load() },
-            'Показать',
-          ),
-        ),
+        { style: S.row },
+        smallButton(busy ? t('checking') : t('check'), () => void load(), busy),
+        rows !== null
+          ? chipNode(
+              behind.length === 0 ? t('allCurrent') : fmt(t('available'), { count: behind.length }),
+              behind.length === 0 ? OK_COLOR : 'var(--dsw-alias-state-warn-primary)',
+            )
+          : null,
+        behind.length > 0 ? smallButton(t('copyCommands'), copyCommands, false) : null,
+        behind.length > 0 ? smallButton(t('updateAll'), () => void updateAll(), false) : null,
+      )
+
+      return cardSection(
+        'updates',
+        t('updatesTitle'),
+        actions,
+        note !== '' ? h('p', { style: S.hint }, note) : null,
         rows === null
-          ? h('span', { style: { fontSize: 11.5, opacity: 0.6 } }, 'Последние проверки и исправления.')
+          ? h('p', { style: S.hint }, t('updatesHint'))
           : rows.length === 0
-            ? h('span', { style: { fontSize: 11.5, opacity: 0.6 } }, 'Записей пока нет.')
+            ? h('p', { style: S.hint }, t('allCurrent'))
             : h(
                 'div',
-                { style: { display: 'flex', flexDirection: 'column', gap: 3 } },
-                ...rows.slice(0, 8).map((row, index) =>
+                { style: S.list },
+                ...rows.map((row) =>
                   h(
                     'div',
-                    { key: String(index), style: { display: 'flex', gap: 8, fontSize: 11.5, opacity: row.ok === false ? 1 : 0.75 } },
-                    h('span', { style: { minWidth: 120, opacity: 0.7 } }, String(row.at ?? '').slice(11, 16)),
-                    h('span', { style: { minWidth: 70, opacity: 0.8 } }, row.plugin ?? ''),
-                    h('span', { style: { minWidth: 60 } }, row.kind ?? ''),
-                    h('span', null, String(row.text ?? '')),
+                    { key: row.name, style: S.listRow, 'data-dsh-polish-row': 'row' },
+                    h('span', { style: { minWidth: 150, color: 'var(--dsw-alias-label-primary)' } }, row.name),
+                    h('span', null, row.installed ?? '—'),
+                    h('span', { style: { color: 'var(--dsw-alias-label-tertiary)' } }, '→'),
+                    h('span', { style: { fontWeight: row.behind === true ? 600 : 400 } }, row.latest ?? row.error ?? '—'),
                   ),
                 ),
               ),
-      );
+      )
     }
 
+
+    /** Подсказки: ключ проверки → ключ строки словаря. */
+    const HINT_KEYS = {
+      token: 'hints.token',
+      sync: 'hints.sync',
+      chrome: 'hints.chrome',
+      port: 'hints.port',
+      secrets: 'hints.secrets',
+      mcp: 'hints.mcp',
+      versions: 'hints.versions',
+      backup: 'hints.backup',
+    }
+
+    let translate = (key) => key
+
+    /** Журнал: что проверяли и исправляли в последнее время. */
+    function JournalBlock() {
+      const t = (key) => translate(key)
+      const [rows, setRows] = React.useState(null)
+
+      const load = async () => {
+        try {
+          const response = await fetch(LOG_PATH, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
+          const data = await response.json()
+          setRows(Array.isArray(data?.rows) ? data.rows : [])
+        } catch {
+          setRows([])
+        }
+      }
+
+      return cardSection(
+        'journal',
+        t('journalTitle'),
+        h('div', { style: S.row }, smallButton(t('show'), () => void load(), false)),
+        rows === null
+          ? h('p', { style: S.hint }, t('journalHint'))
+          : rows.length === 0
+            ? h('p', { style: S.hint }, t('journalEmpty'))
+            : h(
+                'div',
+                { style: S.list },
+                ...rows.slice(0, 8).map((row, index) =>
+                  h(
+                    'div',
+                    { key: String(index), style: S.listRow, 'data-dsh-polish-row': 'row' },
+                    h('span', { style: { minWidth: 120, color: 'var(--dsw-alias-label-tertiary)' } }, String(row.at ?? '').slice(11, 16)),
+                    h('span', { style: { minWidth: 70 } }, row.plugin ?? ''),
+                    h('span', { style: { minWidth: 60, color: 'var(--dsw-alias-label-tertiary)' } }, row.kind ?? ''),
+                    h(
+                      'span',
+                      { style: { flex: 1, minWidth: 0, color: row.ok === false ? BAD_COLOR : 'var(--dsw-alias-label-primary)' } },
+                      String(row.text ?? ''),
+                    ),
+                  ),
+                ),
+              ),
+      )
+    }
+
+    /** Экран «Состояние»: проверки окружения и починка того, что исправимо. */
     function HealthBlock() {
-      const [state, setState] = React.useState(null);
-      const [busy, setBusy] = React.useState(false);
-      const [note, setNote] = React.useState('');
+      const t = (key) => translate(key)
+      const [state, setState] = React.useState(null)
+      const [busy, setBusy] = React.useState(false)
+      const [note, setNote] = React.useState('')
 
       const check = async () => {
-        setBusy(true);
-        setNote('');
+        setBusy(true)
+        setNote('')
         try {
-          const response = await fetch(HEALTH_PATH, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
-          const data = await response.json();
-          setState(data?.ok === true ? data : { checks: [], message: data?.message ?? 'не удалось проверить' });
+          const response = await fetch(HEALTH_PATH, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
+          const data = await response.json()
+          setState(data?.ok === true ? data : { checks: [], message: data?.message ?? t('checkFailed') })
         } catch (error) {
-          setState({ checks: [], message: String(error?.message ?? error) });
+          setState({ checks: [], message: String(error?.message ?? error) })
         } finally {
-          setBusy(false);
+          setBusy(false)
         }
-      };
+      }
 
       const fix = async (action) => {
-        setNote('исправляю…');
+        setNote(t('fixing'))
         try {
-          const response = await fetch(FIX_PATH, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action }) });
-          const data = await response.json();
-          setNote(String(data?.message ?? 'готово'));
-          await check();
+          const response = await fetch(FIX_PATH, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action }) })
+          const data = await response.json()
+          setNote(String(data?.message ?? t('allOk')))
+          await check()
         } catch (error) {
-          setNote('не получилось: ' + String(error?.message ?? error));
+          setNote(fmt(t('fixFailed'), { message: String(error?.message ?? error) }))
         }
-      };
+      }
 
-      const checks = state?.checks ?? [];
-      const bad = checks.filter((item) => item.ok !== true);
+      const checks = state?.checks ?? []
+      const bad = checks.filter((item) => item.ok !== true)
 
-      return h(
+      const actions = h(
         'div',
-        { style: { display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 10, borderTop: '1px solid rgba(128,128,128,0.18)' } },
-        h(
-          'div',
-          { style: { display: 'flex', alignItems: 'center', gap: 10 } },
-          h('span', { style: { fontSize: 12.5, fontWeight: 600 } }, 'Состояние'),
-          h(
-            'button',
-            { style: { padding: '4px 10px', borderRadius: 8, border: '1px solid rgba(128,128,128,0.35)', background: 'rgba(128,128,128,0.12)', color: 'inherit', font: 'inherit', fontSize: 12, cursor: 'pointer' }, onClick: () => void check() },
-            busy ? 'Проверяю…' : 'Проверить',
-          ),
-          state !== null ? h('span', { style: { fontSize: 12, opacity: 0.7 } }, bad.length === 0 ? 'всё в порядке' : 'требует внимания: ' + bad.length) : null,
-        ),
-        note !== '' ? h('span', { style: { fontSize: 11.5, opacity: 0.75 } }, note) : null,
+        { style: S.row },
+        smallButton(busy ? t('checking') : t('check'), () => void check(), busy),
+        state !== null
+          ? chipNode(
+              bad.length === 0 ? t('allOk') : fmt(t('needsAttention'), { count: bad.length }),
+              bad.length === 0 ? OK_COLOR : 'var(--dsw-alias-state-warn-primary)',
+            )
+          : null,
+      )
+
+      return cardSection(
+        'health',
+        t('healthTitle'),
+        actions,
+        note !== '' ? h('p', { style: S.hint }, note) : null,
         state !== null && checks.length > 0
           ? (() => {
               const steps = ['sync', 'backup', 'port', 'token', 'versions']
               const done = steps.filter((id) => checks.some((item) => item.id === id && item.ok === true)).length
-              return h('span', { style: { fontSize: 11.5, fontWeight: 600 } }, `Быстрый старт: ${done} из ${steps.length}`)
+              return h('p', { style: { ...S.text, fontWeight: 600 } }, fmt(t('quickStart'), { done, total: steps.length }))
             })()
           : null,
         state === null
-          ? h('span', { style: { fontSize: 11.5, opacity: 0.6 } }, 'Проверяет git, доступ к репозиторию, резерв, токен, Chrome, порт отладки, MCP и версии.')
+          ? h('p', { style: S.hint }, t('healthHint'))
           : h(
               'div',
-              { style: { display: 'flex', flexDirection: 'column', gap: 4 } },
+              { style: S.list },
               ...checks.map((item) =>
                 h(
                   'div',
-                  { key: item.id, style: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 11.5 } },
-                  h('span', { style: { width: 14, color: item.ok === true ? '#2f9e44' : '#d1242f' } }, item.ok === true ? '✓' : '✗'),
-                  h('span', { style: { minWidth: 170 } }, item.title),
-                  h('span', { style: { opacity: 0.7, flex: 1 } }, item.detail ?? ''),
-                  item.ok !== true && HINTS[item.fix] !== undefined
-                    ? h('span', { style: { fontSize: 10.5, opacity: 0.55, maxWidth: 260 } }, HINTS[item.fix])
+                  { key: item.id, style: S.listRow, 'data-dsh-polish-row': 'row' },
+                  h('span', { style: S.mark(item.ok === true) }, item.ok === true ? '✓' : '✗'),
+                  h('span', { style: { minWidth: 170, color: 'var(--dsw-alias-label-primary)' } }, item.title),
+                  h('span', { style: { flex: 1, minWidth: 0, color: 'var(--dsw-alias-label-tertiary)' } }, item.detail ?? ''),
+                  item.ok !== true && HINT_KEYS[item.fix] !== undefined
+                    ? h('span', { style: { fontSize: 11, color: 'var(--dsw-alias-label-tertiary)', maxWidth: 260 } }, t(HINT_KEYS[item.fix]))
                     : null,
                   item.ok !== true && (item.fix === 'mcp' || item.fix === 'secrets')
-                    ? h(
-                        'button',
-                        { style: { padding: '2px 8px', borderRadius: 6, border: '1px solid rgba(128,128,128,0.35)', background: 'rgba(128,128,128,0.12)', color: 'inherit', font: 'inherit', fontSize: 11, cursor: 'pointer' }, onClick: () => void fix(item.fix) },
-                        'Исправить',
-                      )
+                    ? smallButton(t('fix'), () => void fix(item.fix), false)
                     : null,
                 ),
               ),
             ),
-      );
+      )
     }
 
-    function PolishCard() {
-      const [enabled, setEnabled] = React.useState(isEnabled())
+    /** Переключатель оформления: тот же обработчик, что был на странице. */
+    function AppearanceBlock() {
       const t = (key) => translate(key)
+      const [enabled, setEnabled] = React.useState(isEnabled())
 
       const toggle = (next) => {
         setEnabled(next)
@@ -1031,31 +1213,97 @@ function CollapsedItem({ title, summary, badge, children }) {
         }
       }
 
-      return h(
-        'div',
-        { style: { display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13 } },
-        h('span', { style: { fontSize: 13.5, fontWeight: 600 } }, t('heading')),
-        h('span', { style: { fontSize: 12, opacity: 0.75, lineHeight: 1.5 } }, t('hint')),
-        h(HealthBlock, null),
-        h(JournalBlock, null),
-        h(UpdatesBlock, null),
+      return cardSection(
+        'appearance',
+        t('heading'),
+        null,
         h(
           'label',
-          { style: { display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' } },
+          { style: S.switchRow },
           h('input', {
             type: 'checkbox',
             checked: enabled,
             onChange: (event) => toggle(event.target.checked),
           }),
           h('span', null, t('switchLabel')),
-          h('span', { style: { fontSize: 12, opacity: 0.7 } }, enabled ? t('on') : t('off')),
+        ),
+        h('p', { style: S.hint }, enabled ? t('on') : t('off')),
+      )
+    }
+
+    /** Страница плагина: шапка со статусом и «Обновить», карточки-секции. */
+    function PolishPage() {
+      const t = (key) => translate(key)
+      const enabled = isEnabled()
+
+      return h(
+        'div',
+        { style: S.page, 'data-dsh-polish-page': 'page' },
+        h('style', null, PAGE_CSS),
+        h(
+          'div',
+          { style: S.header, 'data-dsh-polish-header': 'header' },
+          h('div', { style: S.logo, 'aria-hidden': true }, '🎨'),
+          h(
+            'div',
+            { style: S.titles },
+            h('h1', { style: S.heading }, t('title')),
+            h('p', { style: S.subtitle }, t('hint')),
+          ),
+          h(
+            'div',
+            { style: S.actions, 'data-dsh-polish-actions': 'actions' },
+            chipNode(enabled ? t('on') : t('off'), enabled ? OK_COLOR : 'var(--dsw-alias-label-tertiary)'),
+            h(
+              'button',
+              {
+                type: 'button',
+                style: S.refresh,
+                'data-dsh-polish-button': 'refresh',
+                title: t('reload'),
+                'aria-label': t('reload'),
+                onClick: () => {
+                  try {
+                    window.location.reload()
+                  } catch {
+                    // вне браузера обновлять нечего
+                  }
+                },
+              },
+              h('span', { 'aria-hidden': true, style: { fontSize: 14, lineHeight: 1 } }, '↻'),
+              h('span', null, t('reload')),
+            ),
+          ),
+        ),
+        h(AppearanceBlock, null),
+        h(HealthBlock, null),
+        h('div', { style: S.grid, 'data-dsh-polish-grid': 'grid' }, h(JournalBlock, null), h(UpdatesBlock, null)),
+      )
+    }
+
+    /** Сводный режим страницы плагина: короткая карточка. */
+    function PolishSummary() {
+      const t = (key) => translate(key)
+      const enabled = isEnabled()
+      return h(
+        'div',
+        { style: S.card, 'data-dsh-polish-card': 'summary' },
+        h(
+          'div',
+          { style: S.row },
+          h('span', { style: { ...S.logo, width: 34, height: 34, borderRadius: 11, fontSize: 18 } }, '🎨'),
+          h(
+            'div',
+            { style: S.titles },
+            h('span', { style: S.cardTitle }, t('title')),
+            h('span', { style: S.hint }, t('summary')),
+          ),
+          chipNode(enabled ? t('on') : t('off'), enabled ? OK_COLOR : 'var(--dsw-alias-label-tertiary)'),
         ),
       )
     }
 
-    let translate = (key) => key
-
-    /** Содержимое карточки на странице своего плагина. */
+    /** Содержимое страницы своего плагина. */
     function DetailCard_dshpolish(props) {
       const subject = props?.subject
       const packageName =
@@ -1065,8 +1313,8 @@ function CollapsedItem({ title, summary, badge, children }) {
             ? subject.id
             : ''
       if (packageName !== 'dsh-polish') return null
-      const content = () => h(CollapsedItem, { title: 'Оформление интерфейса', summary: 'Наведение, фокус, тема; состояние и обновления', badge: 'наше' }, h(PolishCard))
-      return typeof content === 'function' ? content(props) : content
+      if (props?.view === 'summary') return h(PolishSummary, props)
+      return h(PolishPage, props)
     }
 
     function apply(ctx) {
@@ -1087,7 +1335,7 @@ function CollapsedItem({ title, summary, badge, children }) {
                 'button',
                 {
                   type: 'button',
-                  title: 'Обновить страницу (Ctrl+R)',
+                  title: translate('reloadHint'),
                   onClick: () => window.location.reload(),
                   style: {
                     display: 'inline-flex',

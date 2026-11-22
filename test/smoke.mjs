@@ -247,12 +247,14 @@ const registrations = []
 const effects = []
 let boundNs = ''
 let dict = {}
+let registeredLocales = {}
 const ctx = {
   effect: (fn) => { effects.push(fn) },
   locale: {
     bind: (ns) => { boundNs = ns; return (key) => dict[key] ?? key },
     register: (ns, bundles) => {
       assert.equal(typeof bundles, 'object')
+      registeredLocales = bundles
       dict = bundles?.ru ?? {}
     },
     subscribe: () => () => {},
@@ -388,7 +390,86 @@ const inner = wrapper.type({ ...wrapper.props, children: null })
 assert.equal(inner.type, 'div')
 assert.ok(inner.children.length >= 2)
 
+/* --- Единый стиль страницы плагина -------------------------------------- */
+
+function renderTree(node, depth = 0) {
+  if (node === null || node === undefined || typeof node !== 'object') return node
+  let current = node
+  let guard = 0
+  while (typeof current?.type === 'function' && guard < 20) {
+    current = current.type(current.props ?? {})
+    guard += 1
+    if (current === null || current === undefined) return null
+  }
+  if (typeof current?.type !== 'string') return current
+  current.children = (current.children ?? []).map((child) => renderTree(child, depth + 1))
+  return current
+}
+
+function collect(node, predicate, found = []) {
+  if (node === null || node === undefined || typeof node !== 'object') return found
+  if (predicate(node)) found.push(node)
+  for (const child of node.children ?? []) collect(child, predicate, found)
+  return found
+}
+
+const pageTree = renderTree(inner)
+const pageFrame = pageTree.props?.style ?? {}
+assert.equal(pageFrame.maxWidth, 960, 'страница центрирована по maxWidth 960')
+assert.equal(pageFrame.margin, '0 auto', 'страница по центру: margin auto')
+assert.equal(pageFrame.padding, '24px 28px 40px', 'отступы страницы 24/28/40')
+assert.notEqual(pageTree.props?.['data-dsh-polish-page'], undefined, 'страница помечена data-атрибутом')
+
+const headers = collect(pageTree, (node) => node.props?.['data-dsh-polish-header'] === 'header')
+assert.equal(headers.length, 1, 'шапка страницы одна')
+const logos = collect(pageTree, (node) => node.props?.style?.width === 52)
+assert.equal(logos.length, 1, 'иконка-эмодзи 52 в шапке')
+assert.equal(logos[0].children?.[0], '🎨', 'в шапке эмодзи 🎨')
+const headings = collect(pageTree, (node) => node.type === 'h1' && node.props?.style?.fontSize === 20)
+assert.equal(headings.length, 1, 'заголовок 20px')
+const chips = collect(pageTree, (node) => node.props?.['data-dsh-polish-chip'] === 'status')
+assert.ok(chips.length >= 1, 'статус-чип в шапке')
+const refreshButtons = collect(
+  pageTree,
+  (node) => node.type === 'button' && node.props?.style?.height === 32 && node.props?.['data-dsh-polish-button'] === 'refresh',
+)
+assert.equal(refreshButtons.length, 1, 'кнопка «Обновить» в шапке')
+
+const cards = collect(pageTree, (node) => typeof node.props?.['data-dsh-polish-card'] === 'string')
+assert.ok(cards.length >= 4, `карточки-секции отрисованы (${cards.length})`)
+assert.ok(cards.every((card) => card.props?.style?.borderRadius === 14), 'у карточек радиус 14')
+assert.ok(cards.every((card) => card.props?.style?.background === 'var(--dsw-alias-bg-layer-1)'), 'фон карточек — токен слоя')
+const switchInput = collect(pageTree, (node) => node.type === 'input' && node.props?.type === 'checkbox')
+assert.equal(switchInput.length, 1, 'переключатель оформления на месте')
+
+const pageStyles = collect(pageTree, (node) => node.type === 'style')
+const pageCss = pageStyles.map((node) => node.children?.join('') ?? '').join('\n')
+assert.match(pageCss, /\[data-dsh-polish-row\]:hover/, 'hover строк списка')
+assert.match(pageCss, /data-dsh-polish-button\]:disabled/, 'disabled-состояние кнопок')
+assert.match(pageCss, /@media \(max-width: 760px\)/, 'адаптив под узкий экран')
+assert.match(pageCss, /\[data-dsh-polish-page\]\{padding:18px 16px 32px/, 'на узком экране меньше отступы')
+
+// сводный режим: короткая карточка, чужая страница — null
+const summaryWrapper = sectionRegistration.component({
+  subject: { kind: 'bundle', pkg: { name: 'dsh-polish' } },
+  view: 'summary',
+})
+assert.equal(typeof summaryWrapper.type, 'function')
+const summary = renderTree(summaryWrapper.type({ ...summaryWrapper.props, children: null }))
+assert.equal(summary.props?.['data-dsh-polish-card'], 'summary', 'сводка — отдельная карточка')
+assert.equal(sectionRegistration.component({ subject: { kind: 'bundle', pkg: { name: 'dsh-inbox' } } }), null)
+
+// словари ru/en описывают одинаковый набор ключей
+const ruBundle = dict
+const enBundle = registeredLocales.en
+assert.deepEqual(Object.keys(ruBundle).sort(), Object.keys(enBundle).sort(), 'набор ключей ru и en совпадает')
+for (const key of ['reload', 'healthTitle', 'journalTitle', 'updatesTitle', 'check', 'fix', 'checking']) {
+  assert.equal(typeof enBundle[key], 'string', `en: ключ ${key}`)
+  assert.equal(typeof ruBundle[key], 'string', `ru: ключ ${key}`)
+}
+
 console.log('polish smoke: OK')
 console.log('  стили:', css.split('\n').length, 'строк | карточка:', inner.children.length, 'элементов')
 console.log('  описание:', 'свёрнуто, шеврон, localStorage:', baseKey, '|', docKey)
 console.log('  документ:', 'скрыт data-detail-document, без дублей, restore очищает разметку')
+console.log('  страница:', 'maxWidth 960, шапка 🎨, чип, «Обновить», карточек:', cards.length, ', адаптив')
