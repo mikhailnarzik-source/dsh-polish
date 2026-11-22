@@ -446,8 +446,30 @@ const pageStyles = collect(pageTree, (node) => node.type === 'style')
 const pageCss = pageStyles.map((node) => node.children?.join('') ?? '').join('\n')
 assert.match(pageCss, /\[data-dsh-polish-row\]:hover/, 'hover строк списка')
 assert.match(pageCss, /data-dsh-polish-button\]:disabled/, 'disabled-состояние кнопок')
-assert.match(pageCss, /@media \(max-width: 760px\)/, 'адаптив под узкий экран')
+assert.match(pageCss, /@media \(max-width: 900px\)/, 'адаптив под средний экран')
+assert.match(pageCss, /@media \(max-width: 640px\)/, 'адаптив под узкий экран')
 assert.match(pageCss, /\[data-dsh-polish-page\]\{padding:18px 16px 32px/, 'на узком экране меньше отступы')
+assert.match(pageCss, /grid-template-columns:1fr !important/, 'на 900 px сетка карточек в одну колонку')
+assert.match(pageCss, /\[data-dsh-polish-row\] > span\{min-width:0 !important\}/, 'на 640 px колонки строк не имеют фиксированной ширины')
+assert.match(pageCss, /margin-top:auto/, 'футер карточки прижат к низу')
+
+// Итерация 2: единые кнопки — мягкая primary-заливка, secondary 32, ширина по тексту.
+const refreshStyle = refreshButtons[0].props.style
+assert.equal(refreshStyle.padding, '0 14px')
+assert.equal(refreshStyle.borderRadius, 10)
+assert.equal(refreshStyle.whiteSpace, 'nowrap')
+assert.equal(refreshStyle.boxSizing, 'border-box')
+assert.equal(pageFrame.maxWidth, 960)
+const secondaryButtons = collect(pageTree, (node) => node.type === 'button' && node.props?.['data-dsh-polish-button'] === 'secondary')
+assert.ok(secondaryButtons.length >= 1, 'secondary-кнопки в карточках')
+for (const button of secondaryButtons) {
+  assert.equal(button.props.style.height, 32, 'secondary — 32 px')
+  assert.equal(button.props.style.borderRadius, 10)
+  assert.equal(button.props.style.padding, '0 14px')
+  assert.doesNotMatch(JSON.stringify(button.props.style), /#fff/, 'нет белого текста')
+}
+const pageSource = await readFile(new URL('../client.js', import.meta.url), 'utf8')
+assert.match(pageSource, /minmax\(min\(100%, 280px\), 1fr\)/, 'адаптивная сетка')
 
 // сводный режим: короткая карточка, чужая страница — null
 const summaryWrapper = sectionRegistration.component({

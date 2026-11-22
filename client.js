@@ -321,21 +321,26 @@ select option:checked {
       },
       chipDot: (color) => ({ width: 7, height: 7, borderRadius: 999, background: color, flex: 'none' }),
       refresh: {
+        boxSizing: 'border-box',
         display: 'inline-flex',
         alignItems: 'center',
+        justifyContent: 'center',
         gap: 6,
         height: 32,
-        padding: '0 12px',
-        borderRadius: 9,
+        padding: '0 14px',
+        borderRadius: 10,
         border: '1px solid var(--dsw-alias-border-l4)',
         background: 'transparent',
         color: 'var(--dsw-alias-label-primary)',
         font: 'inherit',
         fontSize: 12.5,
         fontWeight: 600,
+        lineHeight: '20px',
+        whiteSpace: 'nowrap',
         cursor: 'pointer',
+        transition: 'background-color .12s ease,border-color .12s ease,color .12s ease',
       },
-      grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 },
+      grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: 16, alignItems: 'stretch' },
       stack: { display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 },
       card: {
         background: 'var(--dsw-alias-bg-layer-1)',
@@ -364,6 +369,7 @@ select option:checked {
       listRow: {
         display: 'flex',
         alignItems: 'center',
+        flexWrap: 'wrap',
         gap: 10,
         padding: '8px 10px',
         borderRadius: 10,
@@ -372,6 +378,7 @@ select option:checked {
         lineHeight: 1.45,
         color: 'var(--dsw-alias-label-secondary)',
         minWidth: 0,
+        overflowWrap: 'anywhere',
       },
       label: { fontSize: 12, color: 'var(--dsw-alias-label-secondary)' },
       mark: (ok) => ({
@@ -382,35 +389,41 @@ select option:checked {
         color: ok ? OK_COLOR : BAD_COLOR,
       }),
       primary: {
+        boxSizing: 'border-box',
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
         gap: 8,
         height: 36,
-        padding: '0 16px',
+        padding: '0 14px',
         borderRadius: 10,
-        border: '1px solid var(--dsw-alias-brand-primary)',
-        background: 'var(--dsw-alias-brand-primary)',
-        color: 'var(--dsw-alias-bg-base)',
+        border: '1px solid color-mix(in srgb, var(--dsw-alias-brand-primary) 55%, transparent)',
+        background: 'color-mix(in srgb, var(--dsw-alias-brand-primary) 18%, transparent)',
+        color: 'var(--dsw-alias-brand-primary)',
         font: 'inherit',
         fontSize: 12.5,
         fontWeight: 600,
+        lineHeight: '20px',
+        whiteSpace: 'nowrap',
         cursor: 'pointer',
       },
       secondary: {
+        boxSizing: 'border-box',
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
         gap: 6,
-        height: 28,
-        padding: '0 10px',
-        borderRadius: 8,
+        height: 32,
+        padding: '0 14px',
+        borderRadius: 10,
         border: '1px solid var(--dsw-alias-border-l4)',
         background: 'transparent',
         color: 'var(--dsw-alias-label-primary)',
         font: 'inherit',
-        fontSize: 12,
+        fontSize: 12.5,
         fontWeight: 600,
+        lineHeight: '20px',
+        whiteSpace: 'nowrap',
         cursor: 'pointer',
       },
       input: {
@@ -438,13 +451,26 @@ select option:checked {
 
     /** Адаптив и hover строк списка — то, что не выразить inline-стилями. */
     const PAGE_CSS =
+      '[data-dsh-polish-row]{overflow-wrap:anywhere}' +
       '[data-dsh-polish-row]:hover{background:color-mix(in srgb, var(--dsw-alias-label-primary) 5%, transparent)}' +
+      '[data-dsh-polish-card]{justify-content:flex-start}' +
+      '[data-dsh-polish-card] > *:last-child{margin-top:auto}' +
+      '[data-dsh-polish-button="secondary"]:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover) !important}' +
+      '[data-dsh-polish-button="refresh"]:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover) !important}' +
+      '[data-dsh-polish-button="primary"]:hover:not(:disabled){background:color-mix(in srgb, var(--dsw-alias-brand-primary) 28%, transparent) !important}' +
       '[data-dsh-polish-button]:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}' +
       '[data-dsh-polish-button]:disabled{opacity:0.55;cursor:default}' +
-      '@media (max-width: 760px){' +
-      '[data-dsh-polish-page]{padding:18px 16px 32px !important}' +
+      '@media (max-width: 900px){' +
+      '[data-dsh-polish-page]{padding:20px 20px 36px !important}' +
+      '[data-dsh-polish-grid]{grid-template-columns:1fr !important}' +
       '[data-dsh-polish-header]{align-items:flex-start}' +
+      '}' +
+      '@media (max-width: 640px){' +
+      '[data-dsh-polish-page]{padding:18px 16px 32px !important}' +
       '[data-dsh-polish-actions]{margin-left:0 !important;width:100%}' +
+      '[data-dsh-polish-row]{gap:6px}' +
+      '[data-dsh-polish-row] > span{min-width:0 !important}' +
+      '[data-dsh-polish-button]{max-width:100%}' +
       '}'
 
     /** Подстановка {name} в строки словаря. */
