@@ -21,6 +21,13 @@ window.__ModuleLoader__.load({
     const FIX_PATH = '/api/dsh-polish/fix'
     const LOG_PATH = '/api/dsh-polish/log'
     const UPDATE_ALL_PATH = '/api/dsh-polish/update-all'
+    const DESC_OPEN_PREFIX = 'dsh-polish:desc-open:'
+    const DESC_FLAG = 'data-dsh-polish-desc'
+    // Шеврон вниз; при .is-open CSS поворачивает его на 180°.
+    const CHEVRON_SVG =
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">' +
+      '<path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '</svg>'
 
     const en = {
       title: 'Interface polish',
@@ -29,6 +36,9 @@ window.__ModuleLoader__.load({
       switchLabel: 'Hover highlight and focus ring',
       on: 'Enabled',
       off: 'Disabled',
+      desc: 'Description',
+      descOpen: 'Collapse description',
+      descClosed: 'Expand description',
     }
     const ru = {
       reload: 'Обновить',
@@ -38,6 +48,9 @@ window.__ModuleLoader__.load({
       switchLabel: 'Подсветка наведения и фокус',
       on: 'Включено',
       off: 'Выключено',
+      desc: 'Описание',
+      descOpen: 'Свернуть описание',
+      descClosed: 'Развернуть описание',
     }
 
     const CSS = `
@@ -112,6 +125,57 @@ select option:checked {
 [class*="detailMain"] > [class*="detailTitle"],
 [class*="detailMain"] > [class*="titleRow"] {
   order: 0 !important;
+}
+
+/* Описание плагина: строка-переключатель и свёрнутое тело.
+   Цвета нейтральные (rgba(128,128,128)) и currentColor — работают в обеих темах. */
+.dsh-polish-desc-bar {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0 0 8px;
+  padding: 7px 10px;
+  border: 1px solid rgba(128, 128, 128, 0.22);
+  border-radius: 8px;
+  background: rgba(128, 128, 128, 0.06);
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color .12s ease, border-color .12s ease;
+}
+.dsh-polish-desc-bar:hover {
+  background: rgba(128, 128, 128, 0.12);
+  filter: none;
+}
+.dsh-polish-desc-bar:focus-visible {
+  outline: 2px solid rgba(84, 126, 214, 0.75);
+  outline-offset: 2px;
+}
+.dsh-polish-desc-label {
+  flex: 0 0 auto;
+}
+.dsh-polish-desc-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  transition: transform .18s ease;
+}
+[class*="detailDesc"].is-open > .dsh-polish-desc-bar .dsh-polish-desc-chevron {
+  transform: rotate(180deg);
+}
+.dsh-polish-desc-body {
+  display: none;
+}
+[class*="detailDesc"].is-open > .dsh-polish-desc-body {
+  display: block;
 }
 `
 
@@ -217,6 +281,287 @@ select option:checked {
         }, 'dsh-polish: styles')
       } catch (error) {
         console.error('[dsh-polish] стили недоступны:', error)
+      }
+    }
+
+    /* --- Сворачиваемое описание на странице плагина ---------------------- */
+
+    /** Короткий стабильный ключ памяти: заголовок плагина, иначе путь. */
+    function detailKey(desc) {
+      try {
+        const main = detailMainOf(desc)
+        const title = main === null ? document.querySelector('[class*="detailTitle"]') : findFirstByPrefix(main, 'detailTitle')
+        const name = String(title?.textContent ?? '').trim()
+        if (name !== '') return DESC_OPEN_PREFIX + hashText(name)
+        const path = String(window.location?.pathname ?? '') + String(window.location?.hash ?? '')
+        return DESC_OPEN_PREFIX + hashText(path === '' ? 'plugin' : path)
+      } catch {
+        return DESC_OPEN_PREFIX + 'plugin'
+      }
+    }
+
+    /** Классы хоста хешированы (`detailDesc_ab12`), поэтому сравниваем префикс. */
+    function hasClassPrefix(element, prefix) {
+      const name = typeof element?.className === 'string' ? element.className : ''
+      return name.split(/\s+/).some((token) => token === prefix || token.startsWith(prefix + '_') || token.startsWith(prefix + '-'))
+    }
+
+    function detailMainOf(element) {
+      let node = element?.parentElement
+      while (node !== null && node !== undefined) {
+        if (hasClassPrefix(node, 'detailMain')) return node
+        node = node.parentElement
+      }
+      return null
+    }
+
+    function findFirstByPrefix(element, prefix) {
+      for (const node of childNodesOf(element)) {
+        if (node?.nodeType !== 1) continue
+        if (hasClassPrefix(node, prefix)) return node
+        const nested = findFirstByPrefix(node, prefix)
+        if (nested !== null) return nested
+      }
+      return null
+    }
+
+    /** Описание плагина — только `detailDesc*` внутри `detailMain*`. */
+    function isPluginDesc(desc) {
+      return hasClassPrefix(desc, 'detailDesc') && detailMainOf(desc) !== null
+    }
+
+    function hashText(text) {
+      let value = 5381
+      for (let index = 0; index < text.length; index += 1) {
+        value = ((value << 5) + value + text.charCodeAt(index)) >>> 0
+      }
+      return value.toString(36)
+    }
+
+    function readDescOpen(key) {
+      try {
+        return localStorage.getItem(key) === '1'
+      } catch {
+        return false
+      }
+    }
+
+    function saveDescOpen(key, open) {
+      try {
+        localStorage.setItem(key, open ? '1' : '0')
+      } catch {
+        // без хранилища состояние живёт до перезагрузки страницы
+      }
+    }
+
+    /** Дочерние узлы без живой HTMLCollection — удобнее обходить и переносить. */
+    function childNodesOf(element) {
+      const nodes = []
+      const live = element?.childNodes
+      if (live === undefined || live === null) return nodes
+      for (let index = 0; index < live.length; index += 1) nodes.push(live[index])
+      return nodes
+    }
+
+    function findChild(element, className) {
+      for (const node of childNodesOf(element)) {
+        if (node?.nodeType !== 1 || typeof node.className !== 'string') continue
+        if (node.className.split(/\s+/).includes(className)) return node
+      }
+      return null
+    }
+
+    function applyDescState(desc, bar, open) {
+      if (open) desc.classList.add('is-open')
+      else desc.classList.remove('is-open')
+      bar.setAttribute('aria-expanded', open ? 'true' : 'false')
+      const label = open ? translate('descOpen') : translate('descClosed')
+      bar.setAttribute('aria-label', label)
+      bar.title = label
+    }
+
+    /** Строка-переключатель: подпись слева, шеврон справа. */
+    function createDescBar(desc, key) {
+      const bar = document.createElement('div')
+      bar.className = 'dsh-polish-desc-bar'
+      bar.setAttribute('role', 'button')
+      bar.setAttribute('tabindex', '0')
+      bar.dataset.descKey = key
+      const caption = document.createElement('span')
+      caption.className = 'dsh-polish-desc-label'
+      caption.textContent = translate('desc')
+      const chevron = document.createElement('span')
+      chevron.className = 'dsh-polish-desc-chevron'
+      chevron.setAttribute('aria-hidden', 'true')
+      chevron.innerHTML = CHEVRON_SVG
+      bar.appendChild(caption)
+      bar.appendChild(chevron)
+
+      const toggle = (event) => {
+        try {
+          event?.preventDefault?.()
+          event?.stopPropagation?.()
+        } catch {
+          // событие может быть синтетическим
+        }
+        const currentKey = typeof bar.dataset?.descKey === 'string' ? bar.dataset.descKey : key
+        const open = !desc.classList.contains('is-open')
+        saveDescOpen(currentKey, open)
+        applyDescState(desc, bar, open)
+      }
+      bar.addEventListener('click', toggle)
+      bar.addEventListener('keydown', (event) => {
+        const pressed = String(event?.key ?? '')
+        if (pressed !== 'Enter' && pressed !== ' ' && pressed !== 'Spacebar') return
+        toggle(event)
+      })
+      return bar
+    }
+
+    /** Привести один блок описания к свёрнутому виду; повторный вызов безопасен. */
+    function ensureDescCollapse(desc) {
+      const key = detailKey(desc)
+      const open = readDescOpen(key)
+      let bar = findChild(desc, 'dsh-polish-desc-bar')
+      let body = findChild(desc, 'dsh-polish-desc-body')
+
+      if (body === null) {
+        body = document.createElement('div')
+        body.className = 'dsh-polish-desc-body'
+        while (desc.firstChild !== null && desc.firstChild !== undefined) {
+          body.appendChild(desc.firstChild)
+        }
+        desc.appendChild(body)
+      } else {
+        // React мог добавить содержимое мимо обёртки — вернуть его в тело,
+        // чтобы текст не вылезал из свёрнутого блока.
+        for (const node of childNodesOf(desc)) {
+          if (node !== bar && node !== body) body.appendChild(node)
+        }
+      }
+
+      if (bar === null) {
+        bar = createDescBar(desc, key)
+        desc.insertBefore(bar, body)
+      } else {
+        bar.dataset.descKey = key
+        const caption = findChild(bar, 'dsh-polish-desc-label')
+        const label = translate('desc')
+        if (caption !== null && caption.textContent !== label) caption.textContent = label
+      }
+
+      applyDescState(desc, bar, open)
+      desc.setAttribute(DESC_FLAG, '')
+      return true
+    }
+
+    /** Разложить шевроны по всем описаниям на странице. */
+    function applyDetailCollapseOnce() {
+      let items
+      try {
+        items = document.querySelectorAll('[class*="detailDesc"]')
+      } catch {
+        return 0
+      }
+      let count = 0
+      for (const desc of items) {
+        try {
+          if (isPluginDesc(desc) === false) continue
+          if (ensureDescCollapse(desc) === true) count += 1
+        } catch (error) {
+          console.error('[dsh-polish] описание плагина не свернулось:', error)
+        }
+      }
+      return count
+    }
+
+    const descLayer = { observer: null, timer: 0 }
+
+    function scheduleDetailCollapse() {
+      if (descLayer.timer !== 0) {
+        try {
+          clearTimeout(descLayer.timer)
+        } catch {
+          // таймер уже сработал
+        }
+      }
+      descLayer.timer = setTimeout(() => {
+        descLayer.timer = 0
+        applyDetailCollapseOnce()
+      }, 250)
+    }
+
+    /** Включить свёрнутое описание и следить за перерисовками React. */
+    function startDetailCollapse() {
+      if (descLayer.observer !== null) return
+      applyDetailCollapseOnce()
+      try {
+        const observer = new MutationObserver(() => scheduleDetailCollapse())
+        observer.observe(document.body, { childList: true, subtree: true })
+        descLayer.observer = observer
+      } catch (error) {
+        console.error('[dsh-polish] наблюдение за страницей плагина недоступно:', error)
+      }
+    }
+
+    /** Вернуть разметку как была (при выключении оформления). */
+    function restoreDetailCollapse() {
+      try {
+        for (const desc of document.querySelectorAll('[' + DESC_FLAG + ']')) {
+          const bar = findChild(desc, 'dsh-polish-desc-bar')
+          const body = findChild(desc, 'dsh-polish-desc-body')
+          if (body !== null) {
+            for (const node of childNodesOf(body)) desc.appendChild(node)
+            body.remove()
+          }
+          if (bar !== null) bar.remove()
+          desc.classList.remove('is-open')
+          desc.removeAttribute(DESC_FLAG)
+        }
+      } catch {
+        // вне браузера возвращать нечего
+      }
+    }
+
+    /** Выключить слой и убрать его разметку. */
+    function stopDetailCollapse() {
+      if (descLayer.observer !== null) {
+        try {
+          descLayer.observer.disconnect()
+        } catch {
+          // observer уже отключён
+        }
+        descLayer.observer = null
+      }
+      if (descLayer.timer !== 0) {
+        try {
+          clearTimeout(descLayer.timer)
+        } catch {
+          // таймер уже сработал
+        }
+        descLayer.timer = 0
+      }
+      restoreDetailCollapse()
+    }
+
+    function applyDetailCollapse(ctx) {
+      try {
+        ctx.effect(() => {
+          try {
+            if (isEnabled()) startDetailCollapse()
+          } catch (error) {
+            console.error('[dsh-polish] сворачивание описания недоступно:', error)
+          }
+          return () => {
+            try {
+              stopDetailCollapse()
+            } catch {
+              // нечего останавливать
+            }
+          }
+        }, 'dsh-polish: collapsible description')
+      } catch (error) {
+        console.error('[dsh-polish] свёрнутое описание недоступно:', error)
       }
     }
 
@@ -572,8 +917,13 @@ function CollapsedItem({ title, summary, badge, children }) {
 
       const toggle = (next) => {
         setEnabled(next)
-        if (next) installStyles()
-        else removeStyles()
+        if (next) {
+          installStyles()
+          startDetailCollapse()
+        } else {
+          removeStyles()
+          stopDetailCollapse()
+        }
         try {
           localStorage.setItem(STORAGE_KEY, next ? '1' : '0')
         } catch {
@@ -626,6 +976,7 @@ function CollapsedItem({ title, summary, badge, children }) {
 
       watchTheme()
       applyStyles(ctx)
+      applyDetailCollapse(ctx)
       installReloadShortcut(ctx)
       try {
         ctx.slots.inject('sidebar.footer.action', () =>
