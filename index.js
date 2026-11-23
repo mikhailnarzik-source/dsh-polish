@@ -570,8 +570,263 @@ async function scheduleWindowReload(delayMs = 800) {
   return { ok: true, windows, delayMs }
 }
 
+/* --- Защита от перезапуска во время активной работы ----------------------
+   Перезапуск посреди работы даёт дубли сессий, обрезанные логи и
+   полуприменённый профиль. Поэтому маршрут и кнопка «Обновить» сначала
+   спрашивают хост, чем занят DSH; занято — вернуть busy со списком активных
+   сессий и не перезагружать. Принудительно — только явный force с клиента
+   (второй клик «Всё равно перезапустить»). */
+
+/** Сообщение о занятости: его показывает клиент и получает инструмент app_reload. */
+export const RELOAD_BUSY_MESSAGE = 'Идёт работа: дождитесь завершения'
+
+/** Сколько ждём заголовки активных сессий, чтобы не тормозить проверку. */
+export const ACTIVE_TITLES_TIMEOUT_MS = 1500
+
+/** Сколько сообщений ждёт в очереди агента (`next-turn` + `next-step`). */
+function queuedMessageCount(agent) {
+  try {
+    const inbox = agent?.inbox
+    const nextTurn = Array.isArray(inbox?.nextTurn) ? inbox.nextTurn.length : 0
+    const nextStep = Array.isArray(inbox?.nextStep) ? inbox.nextStep.length : 0
+    return nextTurn + nextStep
+  } catch {
+    return 0
+  }
+}
+
+/**
+ * Запущенные фоновые задачи по всем живым сессиям. `jobs.list()` без
+ * вызывающего видит только бесхозные задачи, поэтому своих спрашиваем по
+ * каждой живой сессии и убираем повторы по id.
+ * @param jobs - реестр задач `ctx.jobs`.
+ * @param sessionIds - id живых сессий (владельцы задач).
+ * @returns строки активных задач в форме активной работы.
+ */
+function collectActiveJobs(jobs, sessionIds) {
+  const rows = []
+  const seen = new Set()
+  const consider = (view) => {
+    if (view === null || view === undefined) return
+    const jobId = String(view.id ?? '')
+    if (jobId !== '') {
+      if (seen.has(jobId)) return
+      seen.add(jobId)
+    }
+    const status = String(view.status ?? '')
+    if (status !== 'running' && status !== 'stopping') return
+    rows.push({
+      sessionId: String(view.owner ?? ''),
+      title: String(view.label ?? ''),
+      kind: 'job',
+      status,
+      jobId,
+    })
+  }
+  try {
+    for (const view of jobs.list()) consider(view)
+  } catch {
+    // часть реестра недоступна — активность агентов проверим отдельно
+  }
+  for (const sessionId of sessionIds) {
+    try {
+      for (const view of jobs.list(sessionId)) consider(view)
+    } catch {
+      // задача чужой сессии не должна ломать проверку
+    }
+  }
+  return rows
+}
+
+/**
+ * Подставить активным строкам заголовки сессий. Заголовок — украшение:
+ * любая ошибка чтения оставляет строку без названия, запрет не снимает.
+ * @param ctx - контекст плагина (в нём живёт `sessionQuery`).
+ * @param rows - строки активной работы, изменяются на месте.
+ */
+async function fillActiveTitles(ctx, rows) {
+  const ids = [...new Set(rows.filter((row) => row.title === '').map((row) => row.sessionId).filter((id) => id !== ''))]
+  if (ids.length === 0) return
+  let results
+  try {
+    const sessionQuery = typeof ctx?.get === 'function' ? ctx.get('sessionQuery') : undefined
+    if (typeof sessionQuery?.readTitleSnapshots !== 'function') return
+    const read = Promise.resolve(sessionQuery.readTitleSnapshots(ids))
+    const timeout = new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(undefined), ACTIVE_TITLES_TIMEOUT_MS)
+      if (typeof timer?.unref === 'function') timer.unref()
+    })
+    results = await Promise.race([read, timeout])
+  } catch {
+    return
+  }
+  const titles = new Map()
+  for (const entry of Array.isArray(results) ? results : []) {
+    if (entry?.status !== 'fulfilled') continue
+    const title = entry?.value?.title?.title
+    if (typeof title === 'string' && title !== '') titles.set(String(entry.sessionId ?? ''), title)
+  }
+  for (const row of rows) {
+    if (row.title !== '') continue
+    const title = titles.get(row.sessionId)
+    if (typeof title === 'string' && title !== '') row.title = title
+  }
+}
+
+/**
+ * Собрать активную работу DSH: открытые ходы и ожидание ответа (агент
+ * `running`), непустую очередь агента и запущенные фоновые задачи.
+ * Ошибка любого источника не отменяет проверку остальных.
+ * @param ctx - контекст плагина.
+ * @returns строки `{ sessionId, title, kind, status }`; title может быть пустым.
+ */
+export async function collectActiveWork(ctx) {
+  const rows = []
+  let liveSessions = []
+  try {
+    const sessions = typeof ctx?.get === 'function' ? ctx.get('sessions') : undefined
+    if (typeof sessions?.list === 'function') liveSessions = sessions.list()
+  } catch {
+    liveSessions = []
+  }
+
+  try {
+    const agents = typeof ctx?.get === 'function' ? ctx.get('agents') : undefined
+    if (typeof agents?.list === 'function') {
+      for (const agent of agents.list()) {
+        const sessionId = String(agent?.id ?? '')
+        if (sessionId === '') continue
+        const status = String(agent?.status ?? '')
+        const queued = queuedMessageCount(agent)
+        if (status !== 'running' && queued === 0) continue
+        const header = agent?.session?.header ?? {}
+        rows.push({
+          sessionId,
+          title: '',
+          kind: header?.origin === 'subagent' ? 'subagent' : 'session',
+          status: status === 'running' ? 'running' : 'queued',
+          queued,
+        })
+      }
+    }
+  } catch {
+    // без реестра агентов остаются ещё задачи и очередь ниже
+  }
+
+  try {
+    const jobs = typeof ctx?.get === 'function' ? ctx.get('jobs') : undefined
+    if (typeof jobs?.list === 'function') {
+      // Владельцы задач: живые сессии и сессии работающих агентов (даже если
+      // реестр сессий недоступен — id агента и сессии совпадают).
+      const sessionIds = [...new Set([
+        ...liveSessions.map((session) => String(session?.id ?? '')),
+        ...rows.map((row) => row.sessionId),
+      ])].filter((id) => id !== '')
+      rows.push(...collectActiveJobs(jobs, sessionIds))
+    }
+  } catch {
+    // реестр задач недоступен — активность агентов уже собрана
+  }
+
+  if (rows.length > 0) await fillActiveTitles(ctx, rows)
+  return rows
+}
+
+/**
+ * Решение о перезагрузке без побочных эффектов.
+ * @param ctx - контекст плагина.
+ * @param force - явное подтверждение пользователя (второй клик).
+ * @returns `{ busy, active, allowed }`.
+ */
+export async function reloadGuard(ctx, force = false) {
+  const active = await collectActiveWork(ctx)
+  const busy = active.length > 0
+  return { busy, active, allowed: busy === false || force === true }
+}
+
+/**
+ * Обработать запрос перезагрузки. `check: true` — только проверка (окно не
+ * трогается), `force: true` — перезагрузка при активной работе по явному
+ * подтверждению. Перезагрузка вызывается только когда проверка разрешила.
+ * @param ctx - контекст плагина.
+ * @param body - тело запроса клиента/инструмента.
+ * @param reload - как перезагрузить окна (подменяется в тестах).
+ * @returns ответ маршрута: `{ ok, busy, active, message }` + поля перезагрузки.
+ */
+export async function handleReloadRequest(ctx, body, reload = scheduleWindowReload) {
+  const options = body !== null && typeof body === 'object' ? body : {}
+  const force = options.force === true
+  const check = options.check === true
+  const guard = await reloadGuard(ctx, force)
+  if (check === true) {
+    return {
+      ok: true,
+      busy: guard.busy,
+      active: guard.active,
+      message: guard.busy ? RELOAD_BUSY_MESSAGE : '',
+    }
+  }
+  if (guard.busy === true && guard.allowed !== true) {
+    return { ok: false, busy: true, active: guard.active, message: RELOAD_BUSY_MESSAGE }
+  }
+  const scheduled = await reload()
+  return {
+    ...scheduled,
+    busy: guard.busy,
+    active: guard.active,
+    ...(guard.busy === true ? { forced: true } : {}),
+  }
+}
+
+/** Событие клиента: перезагрузка отложена, показать предупреждение. */
+export const RELOAD_BLOCKED_EVENT = 'dsh-polish:reload-blocked'
+
+/**
+ * Сообщить странице, что перезагрузка отложена из-за активной работы: клиент
+ * покажет предупреждение со списком. Ошибка доставки не ломает обработку клавиши.
+ * @param contents - webContents окна.
+ * @param active - активные строки для списка.
+ */
+function notifyReloadBlocked(contents, active) {
+  try {
+    const detail = JSON.stringify({ active: Array.isArray(active) ? active.slice(0, 8) : [] })
+    const script = 'window.dispatchEvent(new CustomEvent(' + JSON.stringify(RELOAD_BLOCKED_EVENT) + ', { detail: ' + detail + ' }))'
+    const sent = contents.executeJavaScript(script, true)
+    if (sent !== null && typeof sent?.catch === 'function') sent.catch(() => {})
+  } catch {
+    // страница уже закрыта
+  }
+}
+
+/**
+ * Перезагрузить окно, только если DSH свободен. Занято — окно не трогаем, а
+ * странице отправляем событие: она покажет предупреждение и force-кнопку.
+ * @param contents - webContents окна.
+ * @param ctx - контекст плагина (для проверки занятости).
+ */
+async function guardedWindowReload(contents, ctx) {
+  if (contents === undefined || contents === null) return { ok: false, message: 'окна приложения не найдены' }
+  if (contents.__dshPolishReloadChecking === true) return { ok: false, busy: true }
+  contents.__dshPolishReloadChecking = true
+  try {
+    const guard = await reloadGuard(ctx)
+    if (guard.busy === true) {
+      notifyReloadBlocked(contents, guard.active)
+      return { ok: false, busy: true, active: guard.active, message: RELOAD_BUSY_MESSAGE }
+    }
+    try {
+      contents.reload()
+    } catch {
+      return { ok: false, message: 'окно уже закрыто' }
+    }
+    return { ok: true }
+  } finally {
+    contents.__dshPolishReloadChecking = false
+  }
+}
+
 /** Открыть инструмент «обновить приложение» и перехват сочетаний в окнах. */
-async function installReloadSupport(tool) {
+async function installReloadSupport(tool, ctx) {
   let windows = []
   let listener = null
   try {
@@ -596,7 +851,9 @@ async function installReloadSupport(tool) {
         const isReload = (withControl && (key === 'r' || key === 'к' || code === 'KeyR')) || input.key === 'F5' || code === 'F5'
         if (!isReload) return
         event.preventDefault()
-        try { contents.reload() } catch { /* окно уже закрыто */ }
+        // Защита: при активной работе окно не перезагружаем, а странице
+        // отправляем событие — она покажет предупреждение и force-кнопку.
+        void guardedWindowReload(contents, ctx)
       })
       if (typeof contents.once === 'function') contents.once('destroyed', () => { contents.__dshReloadHooked = false })
     }
@@ -615,7 +872,9 @@ async function installReloadSupport(tool) {
             accelerator: 'CmdOrCtrl+R',
             click: () => {
               const target = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
-              try { target?.webContents.reload() } catch { /* окно закрыто */ }
+              const contents = target?.webContents
+              if (contents === undefined || contents === null) return
+              void guardedWindowReload(contents, ctx)
             },
           }))
           Menu.setApplicationMenu(menu)
@@ -637,9 +896,25 @@ async function installReloadSupport(tool) {
 
   tool({
     name: 'app_reload',
-    description: 'Обновляет окно приложения DeepSeek Harness (аналог Ctrl+R). Полезно, если интерфейс завис или нужно подхватить новую версию плагина.',
-    parameters: { type: 'object', properties: {}, additionalProperties: false },
-    async execute() {
+    description: 'Обновляет окно приложения DeepSeek Harness (аналог Ctrl+R). Полезно, если интерфейс завис или нужно подхватить новую версию плагина. При активной работе (открытый ход, субагенты, очередь, фоновые задачи) возвращает busy со списком; перезагрузка — только с force: true.',
+    parameters: {
+      type: 'object',
+      properties: {
+        force: {
+          type: 'boolean',
+          description: 'Перезагрузить, даже если идёт работа: только по явному подтверждению пользователя.',
+        },
+      },
+      additionalProperties: false,
+    },
+    async execute(input) {
+      const force = input !== null && typeof input === 'object' && input.force === true
+      if (force !== true) {
+        const guard = await reloadGuard(ctx)
+        if (guard.busy === true) {
+          return JSON.stringify({ ok: false, busy: true, active: guard.active, message: RELOAD_BUSY_MESSAGE })
+        }
+      }
       try {
         const electron = await import('electron')
         const BrowserWindow = electron.BrowserWindow ?? electron.default?.BrowserWindow
@@ -665,7 +940,7 @@ export function apply(ctx) {
       console.error('[dsh-polish] инструмент не зарегистрирован:', definition.name, error)
     }
   }
-  void installReloadSupport(tool)
+  void installReloadSupport(tool, ctx)
 
   try {
     ctx.effect(() => {
@@ -763,7 +1038,25 @@ export function apply(ctx) {
         path: RELOAD_PATH,
         methods: ['POST'],
         requestBody: 'buffered',
-        fetch: async () => json(await scheduleWindowReload()),
+        fetch: async (request) => {
+          let body = {}
+          try {
+            body = (await request.json()) ?? {}
+          } catch {
+            body = {}
+          }
+          const result = await handleReloadRequest(ctx, body)
+          // Проверку не журналируем — она бывает частой; перезагрузку и отказ — да.
+          if (body?.check !== true) {
+            const text = result?.ok === true
+              ? (result?.forced === true ? 'принудительно, окон: ' : 'окон: ') + String(result.windows ?? '')
+              : result?.busy === true
+                ? 'отложено: активных ' + String(Array.isArray(result.active) ? result.active.length : 0)
+                : String(result?.message ?? 'ошибка')
+            await appendLog({ kind: 'reload', ok: result?.ok === true, text })
+          }
+          return json(result)
+        },
       })
 
       ctx.connection.fetch.register({

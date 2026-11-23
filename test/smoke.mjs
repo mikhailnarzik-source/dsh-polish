@@ -2125,25 +2125,54 @@ async function withReloadState(scenario) {
 const realFetch = globalThis.fetch
 const realReload = globalThis.window.location.reload
 const reloadCalls = []
+
+/** Тост «идёт работа» в документе (его строит client.js напрямую). */
+function reloadWarning() {
+  return globalThis.document.body.childNodes.find(
+    (node) => node.attrs?.['data-dsh-polish-reload-warning'] !== undefined,
+  ) ?? null
+}
+
+/** Весь текст поддерева FakeElement. */
+function textOf(node) {
+  let text = String(node.textContent ?? '')
+  for (const child of node.childNodes ?? []) text += ' ' + textOf(child)
+  return text
+}
+
+/** Все потомки с атрибутом (для кнопки принудительного перезапуска). */
+function withAttr(node, name, found = []) {
+  if (node.attrs?.[name] !== undefined) found.push(node)
+  for (const child of node.childNodes ?? []) withAttr(child, name, found)
+  return found
+}
+
 globalThis.window.location.reload = () => { reloadCalls.push(Date.now()) }
 try {
-  // Успех: сначала маршрут хоста, страницу сами не перезагружаем.
+  // Свободно: сначала проверка занятости, потом маршрут хоста; страницу сами не трогаем.
   const routeCalls = []
-  globalThis.fetch = async (url) => {
-    routeCalls.push(String(url))
-    return { ok: true, status: 200, json: async () => ({ ok: true, windows: 1 }) }
+  globalThis.fetch = async (url, options) => {
+    routeCalls.push({ url: String(url), body: JSON.parse(options?.body ?? '{}') })
+    return { ok: true, status: 200, json: async () => ({ ok: true, busy: false, active: [], windows: 1 }) }
   }
   await withReloadState(async (render) => {
     const idle = render({ wide: true })
     assert.equal(idle.props['data-state'], 'idle')
     idle.props.onClick()
-    assert.deepEqual(routeCalls, ['/api/dsh-polish/reload'], 'сначала просим хост перезагрузить окно')
+    assert.equal(routeCalls.length, 1, 'сначала один запрос — проверка занятости')
+    assert.equal(routeCalls[0].url, '/api/dsh-polish/reload', 'проверка идёт на маршрут перезагрузки')
+    assert.equal(routeCalls[0].body.check, true, 'первый запрос только проверяет, без перезагрузки')
+    assert.equal(render({ wide: true }).props['data-state'], 'idle', 'проверка не включает «Обновляется…»')
+    await sleep(20)
     const loading = render({ wide: true })
-    assert.equal(loading.props['data-state'], 'loading', 'клик — «Обновляется…»')
+    assert.equal(loading.props['data-state'], 'loading', 'свободно — «Обновляется…»')
     assert.equal(loading.props.disabled, true, 'на время обновления кнопка неактивна')
     assert.equal(loading.props['aria-busy'], 'true', 'aria-busy на время обновления')
     assert.equal(loading.children[0].children[0], '↻', 'в процессе — иконка ↻')
     assert.equal(loading.children[1].children[0], 'Обновляется…', 'подпись «Обновляется…»')
+    assert.equal(routeCalls.length, 2, 'второй запрос — сама перезагрузка')
+    assert.equal(routeCalls[1].body.check, undefined, 'второй запрос — уже не проверка')
+    assert.equal(routeCalls[1].body.force, undefined, 'без force, когда никто не работает')
     assert.equal(reloadCalls.length, 0, 'при успешном маршруте страницу сами не трогаем')
     await sleep(420)
     const done = render({ wide: true })
@@ -2154,12 +2183,100 @@ try {
     assert.equal(reloadCalls.length, 0, 'хост перезагружает окно сам — запасной путь не нужен')
   })
 
+  // Занято: busy-ответ, предупреждение со списком, reload не вызывается;
+  // второй клик по кнопке — уже явный force и перезагрузка.
+  const busyActive = [
+    { sessionId: 's-1', title: 'Пишу отчёт', kind: 'session' },
+    { sessionId: 's-2', title: 'Ревью кода', kind: 'subagent' },
+    { sessionId: 's-3', title: 'Сборка проекта', kind: 'job' },
+  ]
+  const busyMessage = 'Идёт работа: дождитесь завершения'
+  routeCalls.length = 0
+  reloadCalls.length = 0
+  globalThis.fetch = async (url, options) => {
+    const body = JSON.parse(options?.body ?? '{}')
+    routeCalls.push({ url: String(url), body })
+    if (body.check === true) {
+      return { ok: true, status: 200, json: async () => ({ ok: true, busy: true, active: busyActive, message: busyMessage }) }
+    }
+    if (body.force === true) {
+      return { ok: true, status: 200, json: async () => ({ ok: true, busy: true, forced: true, active: busyActive, windows: 1 }) }
+    }
+    return { ok: true, status: 200, json: async () => ({ ok: false, busy: true, active: busyActive, message: busyMessage }) }
+  }
+  await withReloadState(async (render) => {
+    render({ wide: true }).props.onClick()
+    assert.equal(render({ wide: true }).props['data-state'], 'idle', 'занятость проверяется без loading')
+    await sleep(20)
+    const busy = render({ wide: true })
+    assert.equal(busy.props['data-state'], 'busy', 'занято — состояние busy, а не loading')
+    assert.equal(busy.props.disabled, false, 'при busy кнопка активна: второй клик — подтверждение')
+    assert.equal(busy.props['aria-busy'], undefined, 'при busy нет aria-busy')
+    assert.equal(busy.children[0].children[0], '⚠', 'при busy — предупреждающая иконка')
+    assert.equal(busy.children[1].children[0], 'Всё равно перезапустить', 'подпись второго клика')
+    assert.match(String(busy.props.title), /прервёт открытые ходы/, 'подсказка про риск перезапуска')
+    assert.equal(reloadCalls.length, 0, 'busy не вызывает reload страницы')
+    // Рендер предупреждения: тост со списком активных сессий.
+    const warning = reloadWarning()
+    assert.ok(warning !== null, 'предупреждение добавлено в документ')
+    assert.equal(warning.attrs.role, 'alert', 'предупреждение — role=alert')
+    const warningText = textOf(warning)
+    for (const part of ['Идёт работа', 'Пишу отчёт', 'Ревью кода', 'Сборка проекта', 'Сессия', 'Субагент', 'Фоновая задача']) {
+      assert.ok(warningText.includes(part), `в предупреждении есть «${part}»`)
+    }
+    const forceButtons = withAttr(warning, 'data-dsh-polish-reload-force')
+    assert.equal(forceButtons.length, 1, 'в предупреждении одна кнопка «Всё равно перезапустить»')
+    assert.equal(forceButtons[0].textContent, 'Всё равно перезапустить', 'текст кнопки подтверждения')
+    // Второй клик по самой кнопке подвала — явное подтверждение force.
+    busy.props.onClick()
+    assert.equal(render({ wide: true }).props['data-state'], 'loading', 'второй клик — уже перезагрузка')
+    await sleep(420)
+    const forcedCall = routeCalls[routeCalls.length - 1]
+    assert.equal(forcedCall.body.force, true, 'force-подтверждение уходит на хост')
+    assert.equal(render({ wide: true }).props['data-state'], 'done', 'после force — «Готово»')
+    assert.equal(reloadCalls.length, 0, 'перезагрузку делает хост по маршруту')
+    assert.equal(reloadWarning(), null, 'после перезагрузки предупреждение убрано')
+  })
+
+  // Занято, но force нажат в самом предупреждении — тот же явный путь.
+  routeCalls.length = 0
+  reloadCalls.length = 0
+  await withReloadState(async (render) => {
+    render({ wide: true }).props.onClick()
+    await sleep(20)
+    const warning = reloadWarning()
+    assert.ok(warning !== null, 'предупреждение показано до force')
+    withAttr(warning, 'data-dsh-polish-reload-force')[0].dispatch('click')
+    assert.equal(render({ wide: true }).props['data-state'], 'loading', 'кнопка в тосте тоже перезагружает с force')
+    await sleep(420)
+    assert.equal(routeCalls[routeCalls.length - 1].body.force, true, 'force из тоста')
+    assert.equal(render({ wide: true }).props['data-state'], 'done', 'тост-боттон: «Готово»')
+    assert.equal(reloadCalls.length, 0, 'тост не трогает location.reload')
+  })
+
+  // Хост отложил Ctrl+R/F5 и прислал событие — клиент показывает то же
+  // предупреждение, а его force-кнопка перезагружает через маршрут с force.
+  routeCalls.length = 0
+  reloadCalls.length = 0
+  globalThis.window.dispatchEvent(new globalThis.window.CustomEvent('dsh-polish:reload-blocked', {
+    detail: { active: [{ sessionId: 's-9', title: 'Отчёт по задаче', kind: 'session' }] },
+  }))
+  const blockedWarning = reloadWarning()
+  assert.ok(blockedWarning !== null, 'событие хоста показывает предупреждение о работе')
+  assert.ok(textOf(blockedWarning).includes('Отчёт по задаче'), 'в предупреждении из события есть название сессии')
+  assert.equal(reloadCalls.length, 0, 'событие хоста не перезагружает страницу само')
+  withAttr(blockedWarning, 'data-dsh-polish-reload-force')[0].dispatch('click')
+  await sleep(20)
+  assert.equal(routeCalls[routeCalls.length - 1].body.force, true, 'force из предупреждения по событию')
+  assert.equal(reloadCalls.length, 0, 'перезагрузку делает хост по маршруту')
+
   // Ошибка: маршрут недоступен, страница тоже не перезагружается.
   globalThis.fetch = async () => { throw new Error('нет сети') }
   globalThis.window.location.reload = () => { throw new Error('перезагрузка запрещена') }
   await withReloadState(async (render) => {
     const idle = render({ wide: true })
     idle.props.onClick()
+    await sleep(20)
     const loading = render({ wide: true })
     assert.equal(loading.props['data-state'], 'loading', 'клик — «Обновляется…» и при недоступном хосте')
     await sleep(420)
@@ -2190,15 +2307,39 @@ assert.equal(registeredLocales.ru.reloading, 'Обновляется…', 'ru: �
 assert.equal(registeredLocales.ru.reloadDone, 'Готово', 'ru: «Готово»')
 assert.equal(registeredLocales.ru.reloadFailed, 'Не удалось', 'ru: «Не удалось»')
 assert.equal(registeredLocales.ru.reload, 'Обновить', 'ru: «Обновить»')
+assert.equal(registeredLocales.ru.reloadBusy, 'Идёт работа: дождитесь завершения', 'ru: текст занятости')
+assert.equal(registeredLocales.ru.reloadForce, 'Всё равно перезапустить', 'ru: второй клик force')
 assert.equal(registeredLocales.en.reloading, 'Refreshing…', 'en: «Refreshing…»')
 assert.equal(registeredLocales.en.reloadDone, 'Done', 'en: «Done»')
 assert.equal(registeredLocales.en.reloadFailed, 'Failed', 'en: «Failed»')
+assert.equal(registeredLocales.en.reloadBusy, 'Work in progress: wait until it finishes', 'en: текст занятости')
+assert.equal(registeredLocales.en.reloadForce, 'Reload anyway', 'en: второй клик force')
+
+// Клиент: проверка занятости до перезагрузки, единый защищённый путь.
+assert.match(source, /body: JSON\.stringify\(\{ check: true \}\)/, 'клиент сначала спрашивает о занятости')
+assert.match(source, /body: JSON\.stringify\(force === true \? \{ force: true \} : \{\}\)/, 'force уходит только по подтверждению')
+assert.match(source, /const RELOAD_WARNING_FLAG = 'data-dsh-polish-reload-warning'/, 'предупреждение размечено data-атрибутом')
+assert.match(source, /async function requestGuardedReload\(\)/, 'общий защищённый путь reload')
+assert.equal(
+  (source.match(/void requestGuardedReload\(\)/g) ?? []).length >= 2,
+  true,
+  'защищённый путь используют кнопка страницы и Ctrl+R',
+)
 
 // Хост-часть: маршрут перезагрузки зарегистрирован, состав панели не меняется.
 const hostSource = await readFile(new URL('../index.js', import.meta.url), 'utf8')
 assert.match(hostSource, /const RELOAD_PATH = '\/api\/dsh-polish\/reload'/, 'хост знает путь перезагрузки')
 assert.match(hostSource, /path: RELOAD_PATH/, 'маршрут перезагрузки зарегистрирован')
 assert.match(hostSource, /scheduleWindowReload/, 'хост перезагружает окна с задержкой после ответа')
+assert.match(hostSource, /export const RELOAD_BUSY_MESSAGE = 'Идёт работа: дождитесь завершения'/, 'хост знает текст занятости')
+assert.match(hostSource, /export async function collectActiveWork\(ctx\)/, 'хост собирает активную работу')
+assert.match(hostSource, /export async function handleReloadRequest\(ctx, body/, 'хост проверяет занятость до перезагрузки')
+assert.match(hostSource, /active: guard\.active, message: RELOAD_BUSY_MESSAGE/, 'busy-ответ содержит список активных')
+assert.match(hostSource, /force: true/, 'force-параметр есть в инструменте/маршруте')
+assert.match(hostSource, /export const RELOAD_BLOCKED_EVENT = 'dsh-polish:reload-blocked'/, 'хост умеет сообщать об отложенном Ctrl+R/F5')
+assert.match(hostSource, /async function guardedWindowReload\(contents, ctx\)/, 'Ctrl+R/F5 в окне идут через проверку занятости')
+assert.match(source, /const RELOAD_BLOCKED_EVENT = 'dsh-polish:reload-blocked'/, 'клиент слушает событие отложенной перезагрузки')
+assert.match(source, /window\.addEventListener\(RELOAD_BLOCKED_EVENT, onBlocked, true\)/, 'клиент подписан на событие хоста')
 
 // Эмодзи-иконки и hover/focus не сломаны: правила на месте.
 assert.match(css, /nav button\[data-dsh-panel-emoji\] \[class\*="panelGlyph"\] svg/, 'эмодзи-иконки левой панели на месте')
@@ -2223,7 +2364,7 @@ console.log(
 )
 console.log(
   '  кнопка «Обновить»:',
-  'как «Новая сессия»: 38 px, рамка 0.5 border-l3, радиус dsw-radius-md, фон button-elevated-fill, ширина 100 %, шрифт 14/500; состояния «Обновляется…/Готово/Не удалось», рельс 36×36, маршрут reload + запасной путь',
+  'как «Новая сессия»: 38 px, рамка 0.5 border-l3, радиус dsw-radius-md, фон button-elevated-fill, ширина 100 %, шрифт 14/500; проверка занятости без loading, занято — «Идёт работа / Всё равно перезапустить» + предупреждение со списком, свободно — «Обновляется…/Готово/Не удалось», рельс 36×36, маршрут reload (check/force) + запасной путь',
 )
 console.log(
   '  панели:',

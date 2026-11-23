@@ -25,6 +25,14 @@ window.__ModuleLoader__.load({
     // Сколько минимум держим «Обновляется…», чтобы состояние было видно глазом,
     // а не мелькало на один кадр.
     const RELOAD_BUSY_MIN_MS = 320
+    // Предупреждение «идёт работа»: сколько висит и по какому атрибуту его найти.
+    // Перезапуск во время работы даёт дубли сессий и отвалившиеся плагины,
+    // поэтому кнопка сначала проверяет занятость и только второй явный клик
+    // («Всё равно перезапустить») перезагружает принудительно.
+    const RELOAD_WARNING_MS = 9000
+    const RELOAD_WARNING_FLAG = 'data-dsh-polish-reload-warning'
+    // Событие от хоста: Ctrl+R/F5 отложен, потому что идёт работа.
+    const RELOAD_BLOCKED_EVENT = 'dsh-polish:reload-blocked'
     const DESC_OPEN_PREFIX = 'dsh-polish:desc-open:'
     const DESC_FLAG = 'data-dsh-polish-desc'
     const DOC_FLAG = 'data-dsh-polish-doc'
@@ -132,6 +140,13 @@ window.__ModuleLoader__.load({
       reloading: 'Refreshing…',
       reloadDone: 'Done',
       reloadFailed: 'Failed',
+      reloadBusy: 'Work in progress: wait until it finishes',
+      reloadBusyNote: 'Reloading now would duplicate sessions and leave plugins half applied. Finish all sessions and subagents first.',
+      reloadForce: 'Reload anyway',
+      reloadForceHint: 'The reload interrupts open turns and may duplicate sessions.',
+      reloadActiveSession: 'Session',
+      reloadActiveSubagent: 'Subagent',
+      reloadActiveJob: 'Background task',
       heading: 'Appearance of all plugins',
       hint: 'Highlights buttons on hover, draws a visible keyboard focus ring, and keeps native fields readable in both themes. Applies to every plugin, including third-party ones.',
       switchLabel: 'Hover highlight and focus ring',
@@ -211,6 +226,13 @@ window.__ModuleLoader__.load({
       reloading: 'Обновляется…',
       reloadDone: 'Готово',
       reloadFailed: 'Не удалось',
+      reloadBusy: 'Идёт работа: дождитесь завершения',
+      reloadBusyNote: 'Перезапуск сейчас даст дубли сессий и отвалившиеся плагины. Дождитесь завершения всех сессий и субагентов.',
+      reloadForce: 'Всё равно перезапустить',
+      reloadForceHint: 'Перезапуск прервёт открытые ходы и может дать дубли сессий.',
+      reloadActiveSession: 'Сессия',
+      reloadActiveSubagent: 'Субагент',
+      reloadActiveJob: 'Фоновая задача',
       title: 'Оформление интерфейса',
       heading: 'Внешний вид всех плагинов',
       hint: 'Подсвечивает кнопки при наведении, рисует заметную обводку фокуса и держит нативные поля читаемыми в обеих темах. Действует на все плагины, включая сторонние.',
@@ -713,6 +735,110 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
   [data-dsh-polish-reload][data-compact]:hover:not(:disabled),
   [class*='collapsed'] [class*='footArea'] [class*='footerActions'] [data-dsh-polish-reload]:hover:not(:disabled) {
     background-color: var(--dsw-alias-interactive-bg-hover);
+  }
+}
+/* «Идёт работа»: мягкая предупреждающая заливка тем же токеном, что у
+   статус-чипов. Кнопка остаётся активной — второй клик перезагружает
+   принудительно; спиннер сюда не попадает. */
+[data-dsh-polish-reload][data-state='busy'] {
+  border-color: color-mix(in srgb, var(--dsw-alias-state-warn-primary, var(--dsw-alias-state-error-primary)) 55%, transparent);
+  background: color-mix(in srgb, var(--dsw-alias-state-warn-primary, var(--dsw-alias-state-error-primary)) 16%, transparent);
+  color: var(--dsw-alias-state-warn-primary, var(--dsw-alias-state-error-primary));
+}
+[data-dsh-polish-reload][data-state='busy'] [data-dsh-polish-reload-icon] {
+  animation: none;
+}
+/* Предупреждение «идёт работа»: карточка-тост с перечнем активных сессий и
+   кнопкой принудительного перезапуска. Поверх интерфейса, адаптив: на узком
+   экране растягивается по ширине, длинный список прокручивается внутри. */
+[data-dsh-polish-reload-warning] {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 2147483000;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(420px, calc(100vw - 32px));
+  max-height: min(70vh, 520px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-state-warn-primary, var(--dsw-alias-state-error-primary)) 45%, transparent);
+  border-left: 3px solid var(--dsw-alias-state-warn-primary, var(--dsw-alias-state-error-primary));
+  border-radius: 14px;
+  background: var(--dsw-alias-bg-elevated, var(--dsw-alias-button-elevated-fill));
+  color: var(--dsw-alias-label-primary);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+  font-size: 12.5px;
+  line-height: 18px;
+}
+[data-dsh-polish-reload-warning] [data-dsh-polish-reload-warning-title] {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 19px;
+}
+[data-dsh-polish-reload-warning] [data-dsh-polish-reload-warning-list] {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding-left: 18px;
+}
+[data-dsh-polish-reload-warning] [data-dsh-polish-reload-warning-kind] {
+  margin-right: 6px;
+  color: var(--dsw-alias-label-secondary);
+}
+[data-dsh-polish-reload-warning] [data-dsh-polish-reload-warning-name] {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+[data-dsh-polish-reload-warning] [data-dsh-polish-reload-warning-note] {
+  color: var(--dsw-alias-label-secondary);
+  text-align: justify;
+  hyphens: auto;
+}
+[data-dsh-polish-reload-warning] [data-dsh-polish-reload-warning-actions] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+[data-dsh-polish-reload-warning] [data-dsh-polish-reload-force] {
+  box-sizing: border-box;
+  height: 32px;
+  margin: 0;
+  padding: 0 12px;
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-state-warn-primary, var(--dsw-alias-state-error-primary)) 45%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--dsw-alias-state-warn-primary, var(--dsw-alias-state-error-primary)) 16%, transparent);
+  color: var(--dsw-alias-state-warn-primary, var(--dsw-alias-state-error-primary));
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+[data-dsh-polish-reload-warning] [data-dsh-polish-reload-force]:hover {
+  background: color-mix(in srgb, var(--dsw-alias-state-warn-primary, var(--dsw-alias-state-error-primary)) 24%, transparent);
+}
+[data-dsh-polish-reload-warning] [data-dsh-polish-reload-force]:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 2px;
+}
+@media (max-width: 480px) {
+  [data-dsh-polish-reload-warning] {
+    right: 12px;
+    left: 12px;
+    bottom: 12px;
+    width: auto;
+    padding: 12px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-dsh-polish-reload-warning] {
+    transition: none;
   }
 }
 /* --- Конец кнопки обновления ------------------------------------------- */
@@ -1906,10 +2032,21 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
             if (!isReload && !isF5) return
             event.preventDefault()
             event.stopPropagation()
-            window.location.reload()
+            // Тот же защищённый путь, что у кнопки: занято — предупреждение,
+            // свободно — перезагрузка через хост.
+            void requestGuardedReload()
           }
+          /** Хост отложил Ctrl+R/F5: показываем то же предупреждение и force. */
+          const onBlocked = (event) => {
+            const active = Array.isArray(event?.detail?.active) ? event.detail.active : []
+            showReloadWarning({ active, message: translate('reloadBusy') }, () => { void requestForcedReload() })
+          }
+          window.addEventListener(RELOAD_BLOCKED_EVENT, onBlocked, true)
           window.addEventListener('keydown', handler, true)
-          return () => window.removeEventListener('keydown', handler, true)
+          return () => {
+            window.removeEventListener(RELOAD_BLOCKED_EVENT, onBlocked, true)
+            window.removeEventListener('keydown', handler, true)
+          }
         }, 'dsh-polish: reload shortcut')
       } catch (error) {
         console.error('[dsh-polish] сочетание обновления недоступно:', error)
@@ -3043,11 +3180,9 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
                 title: t('reload'),
                 'aria-label': t('reload'),
                 onClick: () => {
-                  try {
-                    window.location.reload()
-                  } catch {
-                    // вне браузера обновлять нечего
-                  }
+                  // Тот же защищённый путь, что у кнопки в подвале: при активной
+                  // работе предупреждение и force, а не мгновенный reload.
+                  void requestGuardedReload()
                 },
               },
               h('span', { 'aria-hidden': true, style: { fontSize: 14, lineHeight: 1 } }, '↻'),
@@ -3257,12 +3392,175 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
       })
     }
 
+    /* --- Защита от перезапуска во время активной работы ---------------------
+       Перезапуск посреди работы даёт дубли сессий, обрезанные логи и
+       полуприменённый профиль. Поэтому кнопки и Ctrl+R сначала спрашивают хост
+       «чем занят?» (`check: true`), и только свободный DSH перезагружается.
+       Занято — предупреждение со списком активных сессий и кнопка «Всё равно
+       перезапустить»: force уходит на хост только по явному второму клику. */
+
+    // Один общий замок: проверка/перезагрузка из кнопки, страницы или Ctrl+R.
+    let reloadActivityInFlight = false
+    // Текущее предупреждение «идёт работа» и таймер его автоскрытия.
+    let reloadWarningNode
+    let reloadWarningTimer
+
+    /** Убрать предупреждение «идёт работа» из документа. */
+    function hideReloadWarning() {
+      if (reloadWarningTimer !== undefined) {
+        clearTimeout(reloadWarningTimer)
+        reloadWarningTimer = undefined
+      }
+      try {
+        if (reloadWarningNode !== undefined) {
+          reloadWarningNode.remove()
+          reloadWarningNode = undefined
+        }
+      } catch {
+        reloadWarningNode = undefined
+      }
+    }
+
+    /** Как назвать строку активной работы в предупреждении. */
+    function activeWorkKindLabel(entry, t) {
+      if (entry?.kind === 'job') return t('reloadActiveJob')
+      if (entry?.kind === 'subagent') return t('reloadActiveSubagent')
+      return t('reloadActiveSession')
+    }
+
+    /** Текст строки: название сессии, иначе её id. */
+    function activeWorkTitle(entry) {
+      const title = typeof entry?.title === 'string' ? entry.title.trim() : ''
+      if (title !== '') return title
+      const id = String(entry?.sessionId ?? '')
+      return id === '' ? '—' : id.slice(0, 12)
+    }
+
+    /**
+     * Показать предупреждение «идёт работа»: тост с перечнем активных сессий,
+     * пояснением и кнопкой принудительного перезапуска. Автоматически скрывается.
+     */
+    function showReloadWarning(info, onForce) {
+      hideReloadWarning()
+      try {
+        const t = (key) => translate(key)
+        const box = document.createElement('div')
+        box.className = 'dsh-polish-reload-warning'
+        box.setAttribute(RELOAD_WARNING_FLAG, 'busy')
+        box.setAttribute('role', 'alert')
+        box.setAttribute('aria-live', 'assertive')
+
+        const title = document.createElement('div')
+        title.setAttribute('data-dsh-polish-reload-warning-title', 'title')
+        const message = typeof info?.message === 'string' && info.message.trim() !== ''
+          ? info.message.trim()
+          : t('reloadBusy')
+        title.textContent = message
+        box.appendChild(title)
+
+        const active = Array.isArray(info?.active) ? info.active : []
+        if (active.length > 0) {
+          const list = document.createElement('ul')
+          list.setAttribute('data-dsh-polish-reload-warning-list', 'list')
+          for (const entry of active.slice(0, 8)) {
+            const item = document.createElement('li')
+            const kind = document.createElement('span')
+            kind.setAttribute('data-dsh-polish-reload-warning-kind', 'kind')
+            kind.textContent = activeWorkKindLabel(entry, t)
+            item.appendChild(kind)
+            const name = document.createElement('span')
+            name.setAttribute('data-dsh-polish-reload-warning-name', 'name')
+            name.textContent = activeWorkTitle(entry)
+            item.appendChild(name)
+            list.appendChild(item)
+          }
+          box.appendChild(list)
+        }
+
+        const note = document.createElement('div')
+        note.setAttribute('data-dsh-polish-reload-warning-note', 'note')
+        note.textContent = t('reloadBusyNote')
+        box.appendChild(note)
+
+        const actions = document.createElement('div')
+        actions.setAttribute('data-dsh-polish-reload-warning-actions', 'actions')
+        const force = document.createElement('button')
+        force.type = 'button'
+        force.setAttribute('data-dsh-polish-reload-force', 'button')
+        force.textContent = t('reloadForce')
+        force.addEventListener('click', () => {
+          if (typeof onForce !== 'function') return
+          try {
+            onForce()
+          } catch (error) {
+            console.error('[dsh-polish] принудительный перезапуск недоступен:', error)
+          }
+        })
+        actions.appendChild(force)
+        box.appendChild(actions)
+
+        document.body.appendChild(box)
+        reloadWarningNode = box
+        reloadWarningTimer = setTimeout(() => { hideReloadWarning() }, RELOAD_WARNING_MS)
+        if (typeof reloadWarningTimer?.unref === 'function') reloadWarningTimer.unref()
+      } catch (error) {
+        console.error('[dsh-polish] предупреждение о работе не показано:', error)
+      }
+    }
+
+    /**
+     * Проверить, чем занят DSH, без перезагрузки (`check: true`).
+     * Возвращает `{ ok, busy, active, message }`; сбой проверки — `{ ok: false,
+     * unavailable: true }` (тогда работает обычный путь с запасным reload).
+     */
+    async function requestActivity() {
+      let response
+      try {
+        const controller = typeof AbortController === 'function' ? new AbortController() : undefined
+        const abortTimer = controller === undefined ? undefined : setTimeout(() => controller.abort(), 5000)
+        if (typeof abortTimer?.unref === 'function') abortTimer.unref()
+        try {
+          response = await fetch(RELOAD_PATH, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ check: true }),
+            ...(controller === undefined ? {} : { signal: controller.signal }),
+          })
+        } finally {
+          clearTimeout(abortTimer)
+        }
+      } catch {
+        return { ok: false, unavailable: true }
+      }
+      let payload = {}
+      try {
+        payload = (await response.json()) ?? {}
+      } catch {
+        payload = {}
+      }
+      if (response.ok !== true) {
+        return {
+          ok: false,
+          unavailable: true,
+          message: typeof payload?.message === 'string' ? payload.message : 'HTTP ' + String(response.status),
+        }
+      }
+      return {
+        ok: true,
+        busy: payload?.busy === true,
+        active: Array.isArray(payload?.active) ? payload.active : [],
+        message: typeof payload?.message === 'string' ? payload.message : '',
+      }
+    }
+
     /**
      * Попросить хост перезагрузить окно приложения (маршрут `/api/dsh-polish/reload`:
-     * сначала ответ, перезагрузка — с задержкой). Если маршрута нет (старый хост,
-     * нет доступа к API) — перезагрузить страницу самим. Возвращает `{ ok, message }`.
+     * сначала ответ, перезагрузка — с задержкой). `force` — явное подтверждение
+     * пользователя. Занятость возвращается как `{ ok:false, busy:true, active }`,
+     * и запасной путь при этом НЕ включается. Если маршрута нет (старый хост,
+     * нет доступа к API) — перезагрузить страницу самим.
      */
-    async function requestAppReload() {
+    async function requestAppReload(force = false) {
       let routeError = ''
       try {
         const controller = typeof AbortController === 'function' ? new AbortController() : undefined
@@ -3273,7 +3571,7 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
           response = await fetch(RELOAD_PATH, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: '{}',
+            body: JSON.stringify(force === true ? { force: true } : {}),
             ...(controller === undefined ? {} : { signal: controller.signal }),
           })
         } finally {
@@ -3281,11 +3579,21 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
         }
         let payload = {}
         try {
-          payload = await response.json()
+          payload = (await response.json()) ?? {}
         } catch {
           payload = {}
         }
-        if (response.ok === true && payload?.ok === true) return { ok: true, windows: payload.windows }
+        // Успех (в том числе force при busy: хост вернёт ok с busy-списком).
+        if (response.ok === true && payload?.ok === true) return { ok: true, windows: payload.windows, forced: payload?.forced === true }
+        // Занято: хост отказал — перезагрузки нет, запасной путь запрещён.
+        if (payload?.busy === true) {
+          return {
+            ok: false,
+            busy: true,
+            active: Array.isArray(payload?.active) ? payload.active : [],
+            message: typeof payload?.message === 'string' ? payload.message : '',
+          }
+        }
         routeError = typeof payload?.message === 'string' ? payload.message : 'HTTP ' + String(response.status)
       } catch (error) {
         routeError = String(error?.message ?? error)
@@ -3299,18 +3607,47 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
       }
     }
 
+    /** Принудительный перезапуск по явному подтверждению (кнопка в предупреждении). */
+    async function requestForcedReload() {
+      hideReloadWarning()
+      return requestAppReload(true)
+    }
+
+    /**
+     * Общая точка перезапуска для кнопки на странице плагина и Ctrl+R: сначала
+     * проверка занятости; занято — предупреждение и ни одного reload; свободно —
+     * обычная перезагрузка через хост.
+     */
+    async function requestGuardedReload() {
+      if (reloadActivityInFlight) return { ok: false, busy: true }
+      reloadActivityInFlight = true
+      try {
+        const activity = await requestActivity()
+        if (activity?.ok === true && activity.busy === true) {
+          showReloadWarning(activity, () => { void requestForcedReload() })
+          return { ok: false, busy: true, active: activity.active }
+        }
+        return await requestAppReload(false)
+      } finally {
+        reloadActivityInFlight = false
+      }
+    }
+
     /**
      * Кнопка «Обновить» в `sidebar.footer.action`: вид как у «Новой сессии»
      * (CSS-слой `[data-dsh-polish-reload]`), отличается только иконка.
-     * Состояния: «Обновляется…» (disabled + спиннер), «Готово», «Не удалось»
-     * (причина — в `title`). В свёрнутой панели — иконка 36×36 по центру.
+     * Состояния: idle → проверка занятости (спиннера нет) → «Обновляется…»
+     * (disabled + спиннер) → «Готово» / «Не удалось». Занято — «Идёт работа»:
+     * подпись «Всё равно перезапустить», кнопка активна, внизу предупреждение
+     * со списком активных сессий; второй клик перезагружает принудительно.
+     * В свёрнутой панели — иконка 36×36 по центру.
      */
     function FooterReloadButton(props) {
       const t = (key) => translate(key)
       const wide = props?.wide !== false
       const [status, setStatus] = React.useState('idle')
       const [detail, setDetail] = React.useState('')
-      const busy = status === 'loading'
+      const loading = status === 'loading'
       const label =
         status === 'loading'
           ? t('reloading')
@@ -3318,24 +3655,48 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
             ? t('reloadDone')
             : status === 'error'
               ? t('reloadFailed')
-              : t('reload')
-      const icon = status === 'done' ? '✓' : status === 'error' ? '!' : '↻'
+              : status === 'busy'
+                ? t('reloadForce')
+                : t('reload')
+      const icon = status === 'done' ? '✓' : status === 'error' ? '!' : status === 'busy' ? '⚠' : '↻'
+      const title =
+        status === 'busy'
+          ? t('reloadForceHint')
+          : detail === ''
+            ? t('reloadHint')
+            : t('reloadFailed') + ': ' + detail
 
       // Финальную подпись не держим вечно: окно обычно уже перезагружается.
-      const scheduleReset = () => {
+      const scheduleReset = (delay = 4000) => {
         const timer = setTimeout(() => {
+          hideReloadWarning()
           setStatus('idle')
           setDetail('')
-        }, 4000)
+        }, delay)
         if (typeof timer?.unref === 'function') timer.unref()
       }
 
-      const reload = () => {
-        if (busy) return
+      /** Показать «идёт работа»: кнопка остаётся активной, спиннера нет. */
+      const showBusy = (info) => {
+        setStatus('busy')
+        setDetail(String(info?.message ?? ''))
+        showReloadWarning(info, () => { void runReload(true) })
+        scheduleReset(RELOAD_WARNING_MS)
+      }
+
+      /** Перезагрузить (force — принудительно) и показать итог. */
+      const runReload = (force) => {
+        if (loading) return
+        hideReloadWarning()
         setStatus('loading')
         setDetail('')
         const startedAt = Date.now()
-        void requestAppReload().then(async (result) => {
+        return requestAppReload(force === true).then(async (result) => {
+          if (result?.busy === true) {
+            // Работа началась между проверкой и перезагрузкой — не перезагружаем.
+            showBusy(result)
+            return
+          }
           const left = RELOAD_BUSY_MIN_MS - (Date.now() - startedAt)
           if (left > 0) await wait(left)
           if (result?.ok === true) {
@@ -3349,6 +3710,31 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
         })
       }
 
+      /** Сначала проверка занятости: занято — предупреждение, свободно — reload. */
+      const checkThenReload = async () => {
+        if (reloadActivityInFlight) return
+        reloadActivityInFlight = true
+        try {
+          const activity = await requestActivity()
+          if (activity?.ok === true && activity.busy === true) {
+            showBusy(activity)
+            return
+          }
+          await runReload(false)
+        } finally {
+          reloadActivityInFlight = false
+        }
+      }
+
+      const reload = () => {
+        if (loading) return
+        if (status === 'busy') {
+          void runReload(true)
+          return
+        }
+        void checkThenReload()
+      }
+
       const children = [h('span', { 'aria-hidden': true, 'data-dsh-polish-reload-icon': 'icon' }, icon)]
       if (wide) children.push(h('span', { 'data-dsh-polish-reload-label': 'label' }, label))
       return h(
@@ -3359,9 +3745,9 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
           'data-state': status,
           ...(wide ? {} : { 'data-compact': 'true' }),
           'aria-label': status === 'idle' ? t('reloadAria') : label,
-          'aria-busy': busy ? 'true' : undefined,
-          disabled: busy,
-          title: detail === '' ? t('reloadHint') : t('reloadFailed') + ': ' + detail,
+          'aria-busy': loading ? 'true' : undefined,
+          disabled: loading,
+          title,
           onClick: reload,
         },
         ...children,
