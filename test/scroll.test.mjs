@@ -22,7 +22,7 @@ const PACKAGE = JSON.parse(await readFile(new URL('../package.json', import.meta
 
 const PLUGIN = "dsh-polish"
 const PACKAGE_NAME = PACKAGE.name
-const VERSION = "1.4.26"
+const VERSION = "1.4.27"
 const ROOT_SELECTOR = "[data-dsh-polish-page]"
 const ARCH = "root"
 const HAS_DETAIL = true

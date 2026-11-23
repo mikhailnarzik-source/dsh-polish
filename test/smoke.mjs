@@ -1947,6 +1947,263 @@ const emptyPage = emptyList.page()
 assert.deepEqual(rowIdsOf(emptyPage), ['polish'], 'выключенная своя панель остаётся в карточке')
 assert.equal(togglesOf(emptyPage)[0].props.checked, false, 'флажок выключенной своей панели снят')
 
+/* --- Кнопка «Обновить» в подвале левой панели: вид «Новой сессии» -------- */
+
+/** Тело CSS-блока по началу селектора (до первой закрывающей скобки). */
+const cssBlock = (source, selector) => {
+  const index = source.indexOf(selector)
+  assert.ok(index >= 0, `есть CSS-селектор ${selector}`)
+  const open = source.indexOf('{', index)
+  const close = source.indexOf('}', open)
+  return source.slice(open + 1, close)
+}
+
+const reloadStart = css.indexOf('/* --- Кнопка «Обновить» в подвале левой панели')
+assert.ok(reloadStart >= 0, 'блок кнопки обновления добавлен в глобальный CSS')
+const reloadEnd = css.indexOf('/* --- Конец кнопки обновления', reloadStart)
+assert.ok(reloadEnd > reloadStart, 'у блока кнопки обновления есть закрывающий маркер')
+const reloadCss = css.slice(reloadStart, reloadEnd)
+
+// Геометрия и токены — те же, что у .newSession хоста: фон, рамка, радиус,
+// высота, padding, шрифт. Отличается только иконка.
+const reloadBase = cssBlock(reloadCss, '[data-dsh-polish-reload] {')
+assert.match(reloadBase, /width: 100%/, 'ширина 100 % подвала')
+assert.match(reloadBase, /height: 38px/, 'высота 38 px, как у «Новой сессии»')
+assert.match(reloadBase, /padding: 8px 12px/, 'padding 8/12, как у «Новой сессии»')
+assert.match(
+  reloadBase,
+  /border: 0\.5px solid var\(--dsw-alias-border-l3\)/,
+  'рамка 0.5 px border-l3, как у newSession',
+)
+assert.match(reloadBase, /border-radius: var\(--dsw-radius-md\)/, 'радиус dsw-radius-md')
+assert.match(
+  reloadBase,
+  /background: var\(--dsw-alias-button-elevated-fill\)/,
+  'фон button-elevated-fill, как у newSession',
+)
+assert.match(reloadBase, /color: var\(--dsw-alias-label-primary\)/, 'цвет label-primary')
+assert.match(reloadBase, /font-size: 14px/, 'шрифт 14 px')
+assert.match(reloadBase, /font-weight: 500/, 'насыщенность 500')
+assert.match(reloadBase, /line-height: 22px/, 'интерлиньяж 22 px')
+assert.match(reloadBase, /display: flex/, 'кнопка растягивается на всю ширину')
+assert.match(reloadBase, /justify-content: center/, 'содержимое по центру')
+assert.match(reloadBase, /filter: none/, 'нет чужого brightness-фильтра при наведении')
+
+// Боковой отступ подвала — как у строки «Новой сессии» (paint inset 3 + 1).
+const footerPadding = cssBlock(reloadCss, "[class*='footArea'] [class*='footerActions'] {")
+assert.match(
+  footerPadding,
+  /padding: 0 calc\(var\(--dsh-sidebar-paint-inset, 3px\) \+ 1px\)/,
+  'боковой отступ подвала = inset «Новой сессии»',
+)
+assert.match(
+  reloadCss,
+  /\[class\*='footArea'\] \[class\*='footerActions'\]/,
+  'селектор отступа ограничен подвалом левой панели, чужие footerActions не задеты',
+)
+const footerRailPadding = cssBlock(reloadCss, "[class*='collapsed'] [class*='footArea'] [class*='footerActions'] {")
+assert.match(footerRailPadding, /padding: 0/, 'в свёрнутой панели лишний отступ снят')
+
+// Hover/focus не сломан: те же токены, что у hosting-кнопки.
+assert.match(
+  reloadCss,
+  /\[data-dsh-polish-reload\]:hover:not\(:disabled\) \{\s*background: var\(--dsw-alias-button-floating-hover\)/,
+  'hover-фон — button-floating-hover, как у newSession',
+)
+assert.match(
+  reloadCss,
+  /\[data-dsh-polish-reload\]:focus-visible \{\s*outline: 2px solid var\(--dsw-alias-brand-primary\);?\s*outline-offset: 2px/,
+  'обводка фокуса сохранена',
+)
+
+// Состояния: «Обновляется…» (спиннер + disabled-вид), «Готово», «Не удалось».
+assert.match(
+  reloadCss,
+  /\[data-dsh-polish-reload\]\[data-state='loading'\] \{[^}]*cursor: progress/,
+  'состояние «Обновляется…»',
+)
+assert.match(
+  reloadCss,
+  /\[data-dsh-polish-reload\]\[data-state='loading'\] \[data-dsh-polish-reload-icon\] \{[^}]*animation: dsh-polish-reload-spin/,
+  'у «Обновляется…» крутится иконка',
+)
+assert.match(reloadCss, /@keyframes dsh-polish-reload-spin/, 'есть кадры вращения иконки')
+assert.match(
+  reloadCss,
+  /\[data-dsh-polish-reload\]\[data-state='done'\] \{[^}]*--dsw-alias-state-success-primary/,
+  'состояние «Готово» — success-токен',
+)
+assert.match(
+  reloadCss,
+  /\[data-dsh-polish-reload\]\[data-state='error'\] \{[^}]*--dsw-alias-state-error-primary/,
+  'состояние «Не удалось» — error-токен',
+)
+assert.match(reloadCss, /@media \(prefers-reduced-motion: reduce\)/, 'спиннер уважает reduced-motion')
+
+// Свёрнутая панель: иконка 36×36 по центру, подпись скрыта.
+const reloadCompact = cssBlock(reloadCss, '[data-dsh-polish-reload][data-compact],')
+assert.match(reloadCompact, /width: 36px/, 'в рельсе ширина 36 px')
+assert.match(reloadCompact, /height: 36px/, 'в рельсе высота 36 px')
+assert.match(reloadCompact, /padding: 0/, 'в рельсе без внутренних отступов')
+assert.match(reloadCompact, /background: transparent/, 'в рельсе прозрачный фон')
+assert.match(
+  cssBlock(reloadCss, '[data-dsh-polish-reload][data-compact] [data-dsh-polish-reload-label]'),
+  /display: none/,
+  'в свёрнутой панели подпись скрыта — иконка по центру',
+)
+
+// Регистрация и состав панели: одна кнопка в подвале, панели не тронуты.
+const footer = loadPolishPlugin([])
+const footerRegistrations = footer.registrations.filter((item) => item.options.name === 'sidebar.footer.action')
+assert.equal(footerRegistrations.length, 1, 'в подвале ровно одна кнопка обновления')
+assert.equal(footerRegistrations[0].options.id, 'dsh-polish-reload', 'id кнопки обновления')
+assert.equal(footerRegistrations[0].options.order, 90, 'порядок кнопки обновления')
+assert.equal(
+  footer.registrations.filter((item) => item.options.name === 'main').length,
+  1,
+  'состав панели не менялся: одна своя main-панель',
+)
+assert.equal(
+  footer.registrations.filter((item) => item.options.name === 'sidebar.panellist').length,
+  1,
+  'состав панели не менялся: одна своя строка',
+)
+
+// Раскрытая панель: кнопка с подписью, aria-label и иконкой ↻.
+const footerRegister = footerRegistrations[0]
+const wideReload = footerRegister.component({ wide: true })
+assert.equal(wideReload.type, 'button', 'кнопка обновления — button')
+assert.equal(wideReload.props['data-dsh-polish-reload'], 'button', 'data-атрибут кнопки обновления')
+assert.equal(wideReload.props['data-state'], 'idle', 'начальное состояние — «Обновить»')
+assert.equal(wideReload.props['data-compact'], undefined, 'раскрытая панель — без рельсового флага')
+assert.equal(wideReload.props.disabled, false, 'в покое кнопка активна')
+assert.match(String(wideReload.props['aria-label']), /Обновить приложение/, 'aria-label «Обновить»')
+assert.match(String(wideReload.props.title), /Обновить страницу \(Ctrl\+R\)/, 'подсказка кнопки')
+assert.equal(wideReload.children[0].props['data-dsh-polish-reload-icon'], 'icon', 'иконка размечена data-атрибутом')
+assert.equal(wideReload.children[0].children[0], '↻', 'иконка обновления ↻')
+assert.equal(wideReload.children[1].props['data-dsh-polish-reload-label'], 'label', 'подпись размечена')
+assert.equal(wideReload.children[1].children[0], 'Обновить', 'подпись «Обновить»')
+
+// Свёрнутая панель: только иконка, рельсовый флаг.
+const railReload = footerRegister.component({ wide: false })
+assert.equal(railReload.props['data-compact'], 'true', 'свёрнутая панель — рельсовый флаг')
+assert.equal(railReload.children.length, 1, 'в свёрнутой панели остаётся только иконка')
+assert.equal(railReload.children[0].props['data-dsh-polish-reload-icon'], 'icon', 'иконка 36×36 по центру')
+
+/* --- Состояния кнопки: запрос к хосту, запасной путь и ошибка ------------ */
+
+/** Подождать миллисекунды (состояние «Обновляется…» держится минимум 320 мс). */
+const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms) })
+
+/**
+ * Мини-рендер с настоящим useState: хук-стор живёт на время одного сценария,
+ * повторный рендер видит состояние после клика (fake React сам его не хранит).
+ */
+async function withReloadState(scenario) {
+  const hookSlots = []
+  let cursor = 0
+  const originalUseState = React.useState
+  React.useState = (initial) => {
+    const index = cursor
+    cursor += 1
+    if (!(index in hookSlots)) hookSlots[index] = typeof initial === 'function' ? initial() : initial
+    return [hookSlots[index], (next) => {
+      hookSlots[index] = typeof next === 'function' ? next(hookSlots[index]) : next
+    }]
+  }
+  const render = (props) => {
+    cursor = 0
+    return footerRegister.component(props)
+  }
+  try {
+    await scenario(render)
+  } finally {
+    React.useState = originalUseState
+  }
+}
+
+const realFetch = globalThis.fetch
+const realReload = globalThis.window.location.reload
+const reloadCalls = []
+globalThis.window.location.reload = () => { reloadCalls.push(Date.now()) }
+try {
+  // Успех: сначала маршрут хоста, страницу сами не перезагружаем.
+  const routeCalls = []
+  globalThis.fetch = async (url) => {
+    routeCalls.push(String(url))
+    return { ok: true, status: 200, json: async () => ({ ok: true, windows: 1 }) }
+  }
+  await withReloadState(async (render) => {
+    const idle = render({ wide: true })
+    assert.equal(idle.props['data-state'], 'idle')
+    idle.props.onClick()
+    assert.deepEqual(routeCalls, ['/api/dsh-polish/reload'], 'сначала просим хост перезагрузить окно')
+    const loading = render({ wide: true })
+    assert.equal(loading.props['data-state'], 'loading', 'клик — «Обновляется…»')
+    assert.equal(loading.props.disabled, true, 'на время обновления кнопка неактивна')
+    assert.equal(loading.props['aria-busy'], 'true', 'aria-busy на время обновления')
+    assert.equal(loading.children[0].children[0], '↻', 'в процессе — иконка ↻')
+    assert.equal(loading.children[1].children[0], 'Обновляется…', 'подпись «Обновляется…»')
+    assert.equal(reloadCalls.length, 0, 'при успешном маршруте страницу сами не трогаем')
+    await sleep(420)
+    const done = render({ wide: true })
+    assert.equal(done.props['data-state'], 'done', 'после ответа хоста — «Готово»')
+    assert.equal(done.props.disabled, false, 'кнопка снова активна')
+    assert.equal(done.children[0].children[0], '✓', 'в «Готово» — галочка')
+    assert.equal(done.children[1].children[0], 'Готово', 'подпись «Готово»')
+    assert.equal(reloadCalls.length, 0, 'хост перезагружает окно сам — запасной путь не нужен')
+  })
+
+  // Ошибка: маршрут недоступен, страница тоже не перезагружается.
+  globalThis.fetch = async () => { throw new Error('нет сети') }
+  globalThis.window.location.reload = () => { throw new Error('перезагрузка запрещена') }
+  await withReloadState(async (render) => {
+    const idle = render({ wide: true })
+    idle.props.onClick()
+    const loading = render({ wide: true })
+    assert.equal(loading.props['data-state'], 'loading', 'клик — «Обновляется…» и при недоступном хосте')
+    await sleep(420)
+    const failed = render({ wide: true })
+    assert.equal(failed.props['data-state'], 'error', 'неудача — «Не удалось»')
+    assert.equal(failed.children[0].children[0], '!', 'в ошибке — «!»')
+    assert.equal(failed.children[1].children[0], 'Не удалось', 'подпись «Не удалось»')
+    assert.match(String(failed.props.title), /Не удалось: нет сети/, 'причина ошибки — в title')
+  })
+
+  // Запасной путь: маршрута нет (старый хост), но страница перезагружается сама.
+  reloadCalls.length = 0
+  globalThis.fetch = async () => { throw new Error('маршрут недоступен') }
+  globalThis.window.location.reload = () => { reloadCalls.push(Date.now()) }
+  await withReloadState(async (render) => {
+    render({ wide: true }).props.onClick()
+    await sleep(420)
+    assert.equal(reloadCalls.length, 1, 'без маршрута страница перезагружается сама')
+    assert.equal(render({ wide: true }).props['data-state'], 'done', 'запасной путь — тоже «Готово»')
+  })
+} finally {
+  globalThis.fetch = realFetch
+  globalThis.window.location.reload = realReload
+}
+
+// Локали: подписи состояний есть в обеих словарных парах.
+assert.equal(registeredLocales.ru.reloading, 'Обновляется…', 'ru: «Обновляется…»')
+assert.equal(registeredLocales.ru.reloadDone, 'Готово', 'ru: «Готово»')
+assert.equal(registeredLocales.ru.reloadFailed, 'Не удалось', 'ru: «Не удалось»')
+assert.equal(registeredLocales.ru.reload, 'Обновить', 'ru: «Обновить»')
+assert.equal(registeredLocales.en.reloading, 'Refreshing…', 'en: «Refreshing…»')
+assert.equal(registeredLocales.en.reloadDone, 'Done', 'en: «Done»')
+assert.equal(registeredLocales.en.reloadFailed, 'Failed', 'en: «Failed»')
+
+// Хост-часть: маршрут перезагрузки зарегистрирован, состав панели не меняется.
+const hostSource = await readFile(new URL('../index.js', import.meta.url), 'utf8')
+assert.match(hostSource, /const RELOAD_PATH = '\/api\/dsh-polish\/reload'/, 'хост знает путь перезагрузки')
+assert.match(hostSource, /path: RELOAD_PATH/, 'маршрут перезагрузки зарегистрирован')
+assert.match(hostSource, /scheduleWindowReload/, 'хост перезагружает окна с задержкой после ответа')
+
+// Эмодзи-иконки и hover/focus не сломаны: правила на месте.
+assert.match(css, /nav button\[data-dsh-panel-emoji\] \[class\*="panelGlyph"\] svg/, 'эмодзи-иконки левой панели на месте')
+assert.match(css, /button:not\(:disabled\):not\(\[aria-disabled='true'\]\):not\(\[data-dsh-polish-button\]\)/, 'общий hover кнопок не сломан')
+
 // После всех перезагрузок возвращаем окно и состояние первого теста.
 storage.set(
   PANEL_VISIBILITY_KEY,
@@ -1963,6 +2220,10 @@ console.log('  выравнивание:', 'text-align justify + hyphens auto; �
 console.log(
   '  hover/focus:',
   'кнопки, поля, списки, вкладки, ссылки, чекбоксы, переключатели, строки и карточки; transition 120ms; disabled и pre/code исключены',
+)
+console.log(
+  '  кнопка «Обновить»:',
+  'как «Новая сессия»: 38 px, рамка 0.5 border-l3, радиус dsw-radius-md, фон button-elevated-fill, ширина 100 %, шрифт 14/500; состояния «Обновляется…/Готово/Не удалось», рельс 36×36, маршрут reload + запасной путь',
 )
 console.log(
   '  панели:',

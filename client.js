@@ -21,6 +21,10 @@ window.__ModuleLoader__.load({
     const FIX_PATH = '/api/dsh-polish/fix'
     const LOG_PATH = '/api/dsh-polish/log'
     const UPDATE_ALL_PATH = '/api/dsh-polish/update-all'
+    const RELOAD_PATH = '/api/dsh-polish/reload'
+    // Сколько минимум держим «Обновляется…», чтобы состояние было видно глазом,
+    // а не мелькало на один кадр.
+    const RELOAD_BUSY_MIN_MS = 320
     const DESC_OPEN_PREFIX = 'dsh-polish:desc-open:'
     const DESC_FLAG = 'data-dsh-polish-desc'
     const DOC_FLAG = 'data-dsh-polish-doc'
@@ -124,6 +128,10 @@ window.__ModuleLoader__.load({
 
     const en = {
       title: 'Interface polish',
+      reloadAria: 'Refresh the app',
+      reloading: 'Refreshing…',
+      reloadDone: 'Done',
+      reloadFailed: 'Failed',
       heading: 'Appearance of all plugins',
       hint: 'Highlights buttons on hover, draws a visible keyboard focus ring, and keeps native fields readable in both themes. Applies to every plugin, including third-party ones.',
       switchLabel: 'Hover highlight and focus ring',
@@ -199,6 +207,10 @@ window.__ModuleLoader__.load({
     }
     const ru = {
       reload: 'Обновить',
+      reloadAria: 'Обновить приложение',
+      reloading: 'Обновляется…',
+      reloadDone: 'Готово',
+      reloadFailed: 'Не удалось',
       title: 'Оформление интерфейса',
       heading: 'Внешний вид всех плагинов',
       hint: 'Подсвечивает кнопки при наведении, рисует заметную обводку фокуса и держит нативные поля читаемыми в обеих темах. Действует на все плагины, включая сторонние.',
@@ -590,6 +602,120 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
 [class*="collapsed"] nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
   font-size: 18px;
 }
+
+/* --- Кнопка «Обновить» в подвале левой панели --------------------------- */
+/* Вид повторяет «Новую сессию» хоста один в один: тот же фон
+   (button-elevated-fill), рамка 0.5 px border-l3, радиус dsw-radius-md,
+   высота 38 px, padding 8/12, шрифт 14/500/22; ширина — 100 % подвала.
+   Отличается только иконка. Боковой отступ подвала — как у строки «Новой
+   сессии» (paint inset 3 + 1), поэтому кнопки встают в одну линию. Селектор
+   ограничен footArea левой панели, чтобы не задеть чужие footerActions. */
+[class*='footArea'] [class*='footerActions'] {
+  padding: 0 calc(var(--dsh-sidebar-paint-inset, 3px) + 1px);
+}
+[class*='collapsed'] [class*='footArea'] [class*='footerActions'] {
+  padding: 0;
+}
+[data-dsh-polish-reload] {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  height: 38px;
+  margin: 0;
+  padding: 8px 12px;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: var(--dsw-radius-md);
+  background: var(--dsw-alias-button-elevated-fill);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 22px;
+  cursor: pointer;
+  overflow: hidden;
+  filter: none;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+@media (hover: hover) {
+  [data-dsh-polish-reload]:hover:not(:disabled) {
+    background: var(--dsw-alias-button-floating-hover);
+    filter: none;
+  }
+}
+[data-dsh-polish-reload]:active:not(:disabled) {
+  filter: none;
+}
+[data-dsh-polish-reload]:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 2px;
+}
+[data-dsh-polish-reload] [data-dsh-polish-reload-icon] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  font-size: 14px;
+  line-height: 1;
+}
+[data-dsh-polish-reload] [data-dsh-polish-reload-label] {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* Состояния: «Обновляется…» — спиннер, «Готово» и «Не удалось» — мягкая
+   заливка токеном по смыслу (как у статус-чипов), заметка — в title. */
+[data-dsh-polish-reload][data-state='loading'] {
+  cursor: progress;
+  opacity: 0.9;
+}
+[data-dsh-polish-reload][data-state='loading'] [data-dsh-polish-reload-icon] {
+  animation: dsh-polish-reload-spin 0.9s linear infinite;
+}
+[data-dsh-polish-reload][data-state='done'] {
+  border-color: color-mix(in srgb, var(--dsw-alias-state-success-primary) 55%, transparent);
+  background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 16%, transparent);
+  color: var(--dsw-alias-state-success-primary);
+}
+[data-dsh-polish-reload][data-state='error'] {
+  border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 55%, transparent);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 16%, transparent);
+  color: var(--dsw-alias-state-error-primary);
+}
+@keyframes dsh-polish-reload-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-dsh-polish-reload][data-state='loading'] [data-dsh-polish-reload-icon] {
+    animation: none;
+  }
+}
+/* Свёрнутая панель: кнопка становится иконкой 36×36 по центру рельса, как
+   штатная «Новая сессия» в свёрнутом виде; подпись скрыта. */
+[data-dsh-polish-reload][data-compact],
+[class*='collapsed'] [class*='footArea'] [class*='footerActions'] [data-dsh-polish-reload] {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  gap: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+}
+[data-dsh-polish-reload][data-compact] [data-dsh-polish-reload-label] {
+  display: none;
+}
+@media (hover: hover) {
+  [data-dsh-polish-reload][data-compact]:hover:not(:disabled),
+  [class*='collapsed'] [class*='footArea'] [class*='footerActions'] [data-dsh-polish-reload]:hover:not(:disabled) {
+    background-color: var(--dsw-alias-interactive-bg-hover);
+  }
+}
+/* --- Конец кнопки обновления ------------------------------------------- */
 `
 
     /** Только токены DSH: акцент, границы, текст — без жёстких цветов. */
@@ -3122,6 +3248,126 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
       syncFallbackPanels(ctx)
     }
 
+    /* --- Кнопка «Обновить» в подвале левой панели -------------------------- */
+
+    /** Пауза для короткой выдержки состояния «Обновляется…». */
+    function wait(ms) {
+      return new Promise((resolve) => {
+        setTimeout(resolve, ms)
+      })
+    }
+
+    /**
+     * Попросить хост перезагрузить окно приложения (маршрут `/api/dsh-polish/reload`:
+     * сначала ответ, перезагрузка — с задержкой). Если маршрута нет (старый хост,
+     * нет доступа к API) — перезагрузить страницу самим. Возвращает `{ ok, message }`.
+     */
+    async function requestAppReload() {
+      let routeError = ''
+      try {
+        const controller = typeof AbortController === 'function' ? new AbortController() : undefined
+        const abortTimer = controller === undefined ? undefined : setTimeout(() => controller.abort(), 8000)
+        if (typeof abortTimer?.unref === 'function') abortTimer.unref()
+        let response
+        try {
+          response = await fetch(RELOAD_PATH, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: '{}',
+            ...(controller === undefined ? {} : { signal: controller.signal }),
+          })
+        } finally {
+          clearTimeout(abortTimer)
+        }
+        let payload = {}
+        try {
+          payload = await response.json()
+        } catch {
+          payload = {}
+        }
+        if (response.ok === true && payload?.ok === true) return { ok: true, windows: payload.windows }
+        routeError = typeof payload?.message === 'string' ? payload.message : 'HTTP ' + String(response.status)
+      } catch (error) {
+        routeError = String(error?.message ?? error)
+      }
+      // Запасной путь: страница обновляется сама, без участия хоста.
+      try {
+        window.location.reload()
+        return { ok: true, fallback: true }
+      } catch (error) {
+        return { ok: false, message: routeError === '' ? String(error?.message ?? error) : routeError }
+      }
+    }
+
+    /**
+     * Кнопка «Обновить» в `sidebar.footer.action`: вид как у «Новой сессии»
+     * (CSS-слой `[data-dsh-polish-reload]`), отличается только иконка.
+     * Состояния: «Обновляется…» (disabled + спиннер), «Готово», «Не удалось»
+     * (причина — в `title`). В свёрнутой панели — иконка 36×36 по центру.
+     */
+    function FooterReloadButton(props) {
+      const t = (key) => translate(key)
+      const wide = props?.wide !== false
+      const [status, setStatus] = React.useState('idle')
+      const [detail, setDetail] = React.useState('')
+      const busy = status === 'loading'
+      const label =
+        status === 'loading'
+          ? t('reloading')
+          : status === 'done'
+            ? t('reloadDone')
+            : status === 'error'
+              ? t('reloadFailed')
+              : t('reload')
+      const icon = status === 'done' ? '✓' : status === 'error' ? '!' : '↻'
+
+      // Финальную подпись не держим вечно: окно обычно уже перезагружается.
+      const scheduleReset = () => {
+        const timer = setTimeout(() => {
+          setStatus('idle')
+          setDetail('')
+        }, 4000)
+        if (typeof timer?.unref === 'function') timer.unref()
+      }
+
+      const reload = () => {
+        if (busy) return
+        setStatus('loading')
+        setDetail('')
+        const startedAt = Date.now()
+        void requestAppReload().then(async (result) => {
+          const left = RELOAD_BUSY_MIN_MS - (Date.now() - startedAt)
+          if (left > 0) await wait(left)
+          if (result?.ok === true) {
+            setStatus('done')
+            setDetail('')
+          } else {
+            setStatus('error')
+            setDetail(String(result?.message ?? '').slice(0, 200))
+          }
+          scheduleReset()
+        })
+      }
+
+      const children = [h('span', { 'aria-hidden': true, 'data-dsh-polish-reload-icon': 'icon' }, icon)]
+      if (wide) children.push(h('span', { 'data-dsh-polish-reload-label': 'label' }, label))
+      return h(
+        'button',
+        {
+          type: 'button',
+          'data-dsh-polish-reload': 'button',
+          'data-state': status,
+          ...(wide ? {} : { 'data-compact': 'true' }),
+          'aria-label': status === 'idle' ? t('reloadAria') : label,
+          'aria-busy': busy ? 'true' : undefined,
+          disabled: busy,
+          title: detail === '' ? t('reloadHint') : t('reloadFailed') + ': ' + detail,
+          onClick: reload,
+        },
+        ...children,
+      )
+    }
+
     function apply(ctx) {
       const locale = ctx.locale
       locale.register(NS, { en, ru })
@@ -3135,31 +3381,7 @@ nav button[data-dsh-panel-emoji] [class*="panelGlyph"]::before {
         ctx.slots.inject('sidebar.footer.action', () =>
           ctx.slots.register(
             { name: 'sidebar.footer.action', id: 'dsh-polish-reload', order: 90, locale: NS },
-            () =>
-              h(
-                'button',
-                {
-                  type: 'button',
-                  title: translate('reloadHint'),
-                  onClick: () => window.location.reload(),
-                  style: {
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    height: 26,
-                    padding: '0 8px',
-                    borderRadius: 6,
-                    border: '1px solid rgba(128,128,128,0.3)',
-                    background: 'transparent',
-                    color: 'inherit',
-                    font: 'inherit',
-                    fontSize: 12,
-                    cursor: 'pointer',
-                  },
-                },
-                h('span', null, '↻'),
-                h('span', null, translate('reload')),
-              ),
+            FooterReloadButton,
           ),
         )
       } catch (error) {

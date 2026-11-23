@@ -132,6 +132,7 @@ const HEALTH_PATH = '/api/dsh-polish/health'
 const FIX_PATH = '/api/dsh-polish/fix'
 const LOG_PATH = '/api/dsh-polish/log'
 const UPDATE_ALL_PATH = '/api/dsh-polish/update-all'
+const RELOAD_PATH = '/api/dsh-polish/reload'
 
 /** Файл журнала: короткая история того, что проверяли и исправляли. */
 function logFile() {
@@ -541,6 +542,34 @@ async function fixSecrets() {
 export const AUTO_UPDATE_DELAY_MS = 90_000
 export const AUTO_UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1_000
 
+/**
+ * Перезагрузить окна приложения, ответив клиенту ДО перезагрузки: кнопка
+ * «Обновить» в подвале левой панели успевает показать «Готово», а окно
+ * перезагружается через `delayMs`. Возвращает `{ ok, windows, delayMs }` или
+ * `{ ok:false, message }`. Используется маршрутом `/api/dsh-polish/reload`.
+ */
+async function scheduleWindowReload(delayMs = 800) {
+  let windows = 0
+  try {
+    const electron = await import('electron')
+    const BrowserWindow = electron.BrowserWindow ?? electron.default?.BrowserWindow
+    if (BrowserWindow === undefined) return { ok: false, message: 'Electron недоступен' }
+    for (const win of BrowserWindow.getAllWindows()) {
+      const contents = win?.webContents
+      if (contents === undefined || contents === null) continue
+      windows += 1
+      const timer = setTimeout(() => {
+        try { contents.reload() } catch { /* окно уже закрыто */ }
+      }, delayMs)
+      if (typeof timer.unref === 'function') timer.unref()
+    }
+  } catch (error) {
+    return { ok: false, message: String(error?.message ?? error).slice(0, 200) }
+  }
+  if (windows === 0) return { ok: false, message: 'окна приложения не найдены' }
+  return { ok: true, windows, delayMs }
+}
+
 /** Открыть инструмент «обновить приложение» и перехват сочетаний в окнах. */
 async function installReloadSupport(tool) {
   let windows = []
@@ -728,6 +757,13 @@ export function apply(ctx) {
           }
           return json(await updateAll(body?.apply === true))
         },
+      })
+
+      ctx.connection.fetch.register({
+        path: RELOAD_PATH,
+        methods: ['POST'],
+        requestBody: 'buffered',
+        fetch: async () => json(await scheduleWindowReload()),
       })
 
       ctx.connection.fetch.register({
